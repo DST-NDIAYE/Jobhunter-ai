@@ -1,0 +1,21 @@
+{
+  "preferred_titles": [
+    "Data Scientist",
+    "Junior Data Scientist",
+    "Machine Learning Engineer",
+    "ML Engineer",
+    "AI Engineer",
+    "AI/ML Engineer",
+    "Generative AI Engineer",
+    "Ingénieur IA",
+    "NLP Engineer",
+    "LLM Engineer",
+    "RAG Engineer",
+    "Applied AI Engineer",
+    "Data Engineer",
+    "Data Analyst"
+  ],
+  "preferred_levels": ["junior", "entry-level", "graduate"],
+  "experience_years": {"min": 0, "max": 3},
+  "future_excluded_title_terms": ["Senior", "Lead", "Principal", "Manager", "Head of"]
+}
