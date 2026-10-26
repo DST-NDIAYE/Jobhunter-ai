@@ -42,6 +42,17 @@ class ProviderError(Exception):
     """Erreur publique expurgée : aucun corps HTTP ni secret."""
 
 
+class RetryableProviderError(ProviderError):
+    """Service surchargé ou quota momentané (HTTP 429 / 503) : un nouvel essai peut réussir."""
+
+
+RETRYABLE_STATUSES = (429, 503)
+
+
+def is_retryable(exc: Exception) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE_STATUSES
+
+
 class Provider(Protocol):
     def generate(self, *, messages: list[dict], model: str, api_key: str,
                  timeout: float, schema: type[BaseModel] = GenerationResult) -> BaseModel: ...
@@ -73,5 +84,9 @@ def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False
             if choice["finish_reason"] != "stop" or choice["message"].get("refusal"):
                 raise ValueError("Réponse incomplète ou refusée.")
             return schema.model_validate_json(choice["message"]["content"])
+    except httpx.HTTPStatusError as exc:
+        if is_retryable(exc):
+            raise RetryableProviderError("Service IA surchargé, réessayez plus tard.") from None
+        raise ProviderError("Service IA indisponible ou réponse invalide.") from None
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         raise ProviderError("Service IA indisponible ou réponse invalide.") from None

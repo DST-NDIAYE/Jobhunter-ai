@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from app.config import PROJECT_ROOT, Settings
-from app import cv_tailor
+from app import cv_tailor, llm
 from app.cv_tailor import CVTailorError, OffreAnalyse, Selection
 
 FIXTURE = Path(__file__).parent / "fixtures" / "cv_master_fictif.yaml"
@@ -57,7 +57,7 @@ class FakeProvider:
 class TailorTestCase(unittest.TestCase):
     def run_tailor(self, analysis=None, chosen=None, offer=OFFRE_FICTIVE):
         self.provider = FakeProvider({"OffreAnalyse": analysis or analyse(), "Selection": chosen or selection()})
-        with patch.dict(cv_tailor.PROVIDERS, {"fake": self.provider}), \
+        with patch.dict(llm.PROVIDERS, {"fake": self.provider}), \
                 patch("app.cv_tailor.resolve_provider", return_value=("fake", "modele-test")):
             return cv_tailor.tailor_cv(offer, master_path=FIXTURE, settings=Settings(llm_api_key="cle-test"))
 
@@ -120,6 +120,9 @@ class SelectionTests(TailorTestCase):
             with self.assertRaisesRegex(CVTailorError, "plus de 2 accomplissements"):
                 self.run_tailor(chosen=selection())
 
+    def test_one_page_limits(self):
+        self.assertEqual((cv_tailor.MAX_ACCOMPLISSEMENTS, cv_tailor.MAX_PAR_PROJET), (12, 5))
+
     def test_llm_must_not_write_text(self):
         # Un champ libre en plus est refusé par le schéma strict.
         with self.assertRaises(ValueError):
@@ -175,9 +178,31 @@ class ReportTests(TailorTestCase):
                 self.assertNotIn(word, info.lower())
 
     def test_years_detection(self):
-        self.assertEqual(cv_tailor.years_required_in_text("3+ years of experience in ML"), 3)
-        self.assertEqual(cv_tailor.years_required_in_text("Expérience de 4 ans minimum"), 4)
-        self.assertIsNone(cv_tailor.years_required_in_text("Débutant accepté"))
+        cases = {"3+ years of experience in ML": 3, "Expérience de 4 ans minimum": 4,
+                 "5 ans d'expérience minimum": 5, "Débutant accepté": None, "Expérience : < 6 mois": None,
+                 # Fourchettes : la borne basse.
+                 "Vous justifiez de 3 à 5 ans d’expérience en data science": 3, "3-5 years of experience": 3,
+                 "3 – 5 ans d'expérience": 3, "entre 2 et 4 ans d'expérience": 2,
+                 # « Bac+2 » n'est pas le début d'une fourchette.
+                 "Bac+2 5 ans d'expérience": 5}
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(cv_tailor.years_required_in_text(text), expected)
+
+    def test_range_in_offer_reports_lower_bound(self):
+        offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "3 à 5 ans d'expérience")
+        report = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]
+        self.assertIn("Expérience mentionnée dans l'offre : au moins 3 ans.", report["informations"])
+
+    def test_project_proof_found_in_titles_texts_and_tags(self):
+        report = self.run_tailor(analysis=analyse(
+            competences_requises=["MLOps", "IA générative", "recherche documentaire", "Kubernetes"],
+            competences_souhaitees=[]))["rapport"]
+        strengths = {p["demande"]: p["preuves"] for p in report["points_forts"]}
+        # MLOps : texte d'un accomplissement ; IA générative : tag ; recherche documentaire : titre.
+        self.assertEqual(strengths, {"MLOps": ["prj-fictif-classif"], "IA générative": ["prj-fictif-rag"],
+                                     "recherche documentaire": ["prj-fictif-rag"]})
+        self.assertEqual(report["manques"], ["Kubernetes"])
 
 
 class PrivacyTests(TailorTestCase):

@@ -3,7 +3,7 @@ import re
 import httpx
 from pydantic import BaseModel
 
-from app.llm.base import GenerationResult, ProviderError
+from app.llm.base import GenerationResult, ProviderError, RetryableProviderError, is_retryable
 
 
 class GeminiProvider:
@@ -17,8 +17,8 @@ class GeminiProvider:
         try:
             return self._generate_native(messages=messages, model=clean_model, api_key=api_key, timeout=timeout,
                                          schema=schema)
-        except Exception:
-            pass
+        except Exception as exc:
+            native_overloaded = is_retryable(exc)
 
         # 2. Fallback via le endpoint OpenAI de Google AI Studio
         try:
@@ -32,7 +32,10 @@ class GeminiProvider:
                 openai=False,
                 schema=schema,
             )
-        except Exception:
+        except Exception as exc:
+            # Surcharge (429/503) sur l'un des deux points d'accès : un nouvel essai peut réussir.
+            if native_overloaded or isinstance(exc, RetryableProviderError):
+                raise RetryableProviderError("Service Gemini surchargé, réessayez plus tard.") from None
             raise ProviderError("Service Gemini indisponible ou réponse invalide.") from None
 
     def _generate_native(self, *, messages: list[dict], model: str, api_key: str, timeout: float,

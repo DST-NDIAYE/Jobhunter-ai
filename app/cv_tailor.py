@@ -14,13 +14,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.config import PROJECT_ROOT, get_settings
-from app.llm import PROVIDERS, resolve_provider
+from app.llm import generate_with_retry, resolve_provider
 from app.llm.base import ProviderError
 
 MASTER_PATH = PROJECT_ROOT / "cv_master.yaml"
 
 # Budget d'une page : le CV source tient 17 accomplissements avec photo, on garde de la marge.
-MAX_ACCOMPLISSEMENTS = 15
+MAX_ACCOMPLISSEMENTS = 12
 MAX_PAR_PROJET = 5
 MAX_COMPETENCES = 20
 MAX_COMPETENCES_NOTIONS = 6
@@ -287,15 +287,19 @@ def validate_selection(selection: Selection, master: dict, offer_text: str) -> N
         raise CVTailorError("Sélection rejetée : " + " ; ".join(errors) + ".")
 
 
+# Une durée seule (« 5 ans ») ou une fourchette (« 3 à 5 ans », « 3-5 years », « entre 3 et 5 ans »).
+_YEARS = r"(?:entre\s+|between\s+)?(\d{1,2})(?:\s*(?:a|to|et|and)\s*(\d{1,2}))?\s*\+?\s*"
 _YEARS_PATTERNS = (
-    r"(\d{1,2})\s*\+?\s*(?:ans|annees|an|years?)\s+(?:minimum\s+)?(?:d\s*|of\s+)?(?:experience)",
-    r"(?:experience)\s+(?:de\s+|of\s+)?(?:minimum\s+|au moins\s+|at least\s+)?(\d{1,2})\s*\+?\s*(?:ans|annees|years?)",
+    _YEARS + r"(?:ans|annees|an|years?)\s+(?:minimum\s+)?(?:d\s*|of\s+)?(?:experience)",
+    r"(?:experience)\s+(?:de\s+|of\s+)?(?:minimum\s+|au moins\s+|at least\s+)?" + _YEARS + r"(?:ans|annees|years?)",
 )
 
 
 def years_required_in_text(offer_text: str) -> int | None:
-    text = _normalized(offer_text)
-    found = [int(n) for pattern in _YEARS_PATTERNS for n in re.findall(pattern, text)]
+    """Années minimales demandées ; pour une fourchette, la borne basse."""
+    # « 3-5 ans » devient « 3 à 5 ans » avant normalisation, qui supprime les tirets.
+    text = _normalized(re.sub(r"(\d)\s*[-–]\s*(\d)", r"\1 à \2", offer_text))
+    found = [min(int(n) for n in match if n) for pattern in _YEARS_PATTERNS for match in re.findall(pattern, text)]
     return max(found) if found else None
 
 
@@ -306,6 +310,19 @@ def _contract_in_text(offer_text: str) -> str | None:
         if re.search(pattern, text):
             return contract
     return None
+
+
+def _project_proofs(requested: str, projects: dict) -> list[str]:
+    """Projets qui prouvent la compétence : technologies, titre, texte et tags des accomplissements."""
+    phrase = _normalized(requested)
+    proofs = []
+    for pid, project in projects.items():
+        texts = [project["titre"]] + [t for a in project["accomplissements"]
+                                      for t in [a["texte"], *(a.get("tags") or [])]]
+        if (any(_same_skill(requested, t) for t in project.get("technologies") or [])
+                or (len(phrase) > 2 and any(f" {phrase} " in f" {_normalized(t)} " for t in texts))):
+            proofs.append(pid)
+    return proofs
 
 
 def _same_skill(requested: str, known: str) -> bool:
@@ -325,8 +342,7 @@ def build_report(analyse: OffreAnalyse, master: dict, offer_text: str) -> dict:
         if skill and skill["niveau"] == "courant":
             points_forts.append({"demande": item, "competence": skill["nom"], "preuves": skill.get("preuves") or []})
             continue
-        proofs = [pid for pid, p in projects.items()
-                  if any(_same_skill(item, t) for t in p.get("technologies") or [])]
+        proofs = _project_proofs(item, projects)
         if proofs:
             points_forts.append({"demande": item, "competence": item, "preuves": proofs})
         elif skill:
@@ -387,8 +403,8 @@ def assemble(selection: Selection, analyse: OffreAnalyse, master: dict) -> dict:
 
 def _ask(provider, model, settings, messages, schema):
     try:
-        return PROVIDERS[provider].generate(messages=messages, model=model, api_key=settings.llm_api_key,
-                                            timeout=settings.http_timeout, schema=schema)
+        # Nouvel essai sur surcharge (429/503), puis modèle de secours LLM_FALLBACK_MODEL.
+        return generate_with_retry(provider, model, settings, messages=messages, schema=schema)
     except ProviderError as exc:
         raise CVTailorError(str(exc)) from None
 

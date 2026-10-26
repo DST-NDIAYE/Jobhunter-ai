@@ -26,6 +26,7 @@ class Settings:
     llm_provider: str = "local"
     llm_api_key: str = field(default="", repr=False)
     llm_model: str = ""
+    llm_fallback_model: str = ""
     gmail_client_secret_file: Path = PROJECT_ROOT / "secrets/client_secret.json"
     gmail_token_file: Path = PROJECT_ROOT / "tokens/gmail_token.json"
     gmail_user: str = ""
@@ -53,6 +54,7 @@ def get_settings() -> Settings:
         # La clé LLM provient uniquement du fichier local, jamais d'un widget ou de SQLite.
         llm_api_key=(env_dict.get("LLM_API_KEY") or "").strip(),
         llm_model=os.getenv("LLM_MODEL", "").strip(),
+        llm_fallback_model=os.getenv("LLM_FALLBACK_MODEL", "").strip(),
         gmail_client_secret_file=project_path(os.getenv("GMAIL_CLIENT_SECRET_FILE") or "secrets/client_secret.json"),
         gmail_token_file=project_path(os.getenv("GMAIL_TOKEN_FILE") or "tokens/gmail_token.json"),
         gmail_user=os.getenv("GMAIL_USER", "").strip(),

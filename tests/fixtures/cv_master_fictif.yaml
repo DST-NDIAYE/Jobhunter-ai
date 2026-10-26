@@ -40,12 +40,12 @@ experiences:
         accomplissements:
           - {id: acc-classif-01, texte: "Nettoyage des données de tickets.", tags: [preparation-donnees]}
           - {id: acc-classif-02, texte: "Entraînement de modèles de classification.", tags: [classification]}
-          - {id: acc-classif-03, texte: "Mise en production du pipeline.", tags: [pipeline]}
+          - {id: acc-classif-03, texte: "Mise en production du pipeline selon les pratiques MLOps.", tags: [pipeline]}
       - id: prj-fictif-rag
-        titre: "Assistant RAG fictif"
+        titre: "Assistant RAG fictif de recherche documentaire"
         technologies: [Python, LangChain, FAISS]
         accomplissements:
-          - {id: acc-rag-01, texte: "Indexation vectorielle avec FAISS.", tags: [rag]}
+          - {id: acc-rag-01, texte: "Indexation vectorielle avec FAISS.", tags: [rag, ia-generative]}
           - {id: acc-rag-02, texte: "Conception du prompt de réponse.", tags: [prompt-engineering]}
   - id: exp-fictive-stage
     poste: "Stagiaire Data Analyst"
