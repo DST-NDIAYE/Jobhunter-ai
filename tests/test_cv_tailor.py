@@ -146,19 +146,33 @@ class ReportTests(TailorTestCase):
         self.assertEqual(report["manques"], ["Kubernetes"])
         self.assertEqual([n["competence"] for n in report["competences_a_niveau_notions"]],
                          ["TensorFlow", "SQL", "Git/GitHub"])
-        self.assertEqual(report["alertes"], [])
+        self.assertEqual(report["informations"], [])
 
-    def test_senior_offer_triggers_experience_alert_from_text(self):
+    def test_experience_requested_is_reported_from_text(self):
         offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "5 ans d'expérience minimum, profil senior")
         # Même si l'analyse du LLM sous-estime l'expérience, le texte de l'offre est vérifié en code.
         report = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]
-        self.assertTrue(any("au moins 5 ans" in a for a in report["alertes"]))
+        self.assertIn("Expérience mentionnée dans l'offre : au moins 5 ans.", report["informations"])
 
-    def test_out_of_scope_contract_and_language_alerts(self):
+    def test_contract_and_language_are_reported(self):
         report = self.run_tailor(analysis=analyse(type_contrat="alternance", langue="en"))["rapport"]
-        self.assertTrue(any("Contrat hors cible (alternance)" in a for a in report["alertes"]))
-        self.assertTrue(any("analyse « alternance », texte « CDD »" in a for a in report["alertes"]))
-        self.assertTrue(any("non rédigée en français" in a for a in report["alertes"]))
+        infos = report["informations"]
+        self.assertTrue(any("Contrat de l'offre : alternance" in a for a in infos))
+        self.assertTrue(any("analyse « alternance », texte de l'offre « CDD »" in a for a in infos))
+        self.assertTrue(any("non rédigée en français" in a for a in infos))
+
+    def test_gaps_senior_level_and_other_contract_never_block(self):
+        offer = OFFRE_FICTIVE + "\nKubernetes, Spark et Scala exigés. 8 ans d'expérience. Stage de 6 mois."
+        result = self.run_tailor(offer=offer, analysis=analyse(
+            type_contrat="stage", niveau_experience="senior", experience_min_annees=8,
+            competences_requises=["Kubernetes", "Spark", "Scala"]))
+        # La sélection complète est produite ; les écarts sont de simples informations.
+        self.assertEqual(len(result["experiences"][0]["projets"][0]["accomplissements"]), 2)
+        self.assertEqual(result["rapport"]["manques"], ["Kubernetes", "Spark", "Scala"])
+        self.assertEqual(len(result["rapport"]["informations"]), 3)
+        for info in result["rapport"]["informations"]:
+            for word in ("déconseill", "refus", "bloqu", "en dessous", "hors cible"):
+                self.assertNotIn(word, info.lower())
 
     def test_years_detection(self):
         self.assertEqual(cv_tailor.years_required_in_text("3+ years of experience in ML"), 3)

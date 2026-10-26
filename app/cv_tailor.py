@@ -25,7 +25,7 @@ MAX_PAR_PROJET = 5
 MAX_COMPETENCES = 20
 MAX_COMPETENCES_NOTIONS = 6
 
-# Au-delà, l'offre demande clairement plus qu'un profil junior.
+# À partir de ce seuil, l'expérience demandée est signalée (information, jamais bloquante).
 SEUIL_ANNEES_JUNIOR = 3
 MAX_OFFRE_CARACTERES = 30000
 
@@ -35,7 +35,10 @@ NIVEAUX = ("courant", "notions")
 
 
 class CVTailorError(Exception):
-    """Entrée invalide, LLM indisponible ou sélection rejetée par la validation."""
+    """Entrée invalide, LLM indisponible ou sélection rejetée par la validation.
+
+    Jamais levée pour l'adéquation à l'offre (manques, expérience, contrat) : ce sont des informations.
+    """
 
 
 def _bounded_strings(value, max_items=50, max_len=300):
@@ -333,23 +336,24 @@ def build_report(analyse: OffreAnalyse, master: dict, offer_text: str) -> dict:
         else:
             manques.append(item)
 
-    alertes = []
+    # Informations seulement : rien ici ne refuse, ne bloque ni ne déconseille une candidature.
+    informations = []
     years = max(filter(None, (analyse.experience_min_annees, years_required_in_text(offer_text))), default=None)
     if years is not None and years >= SEUIL_ANNEES_JUNIOR:
-        alertes.append(f"L'offre demande au moins {years} ans d'expérience : profil junior en dessous.")
+        informations.append(f"Expérience mentionnée dans l'offre : au moins {years} ans.")
     if analyse.niveau_experience in ("confirme", "senior"):
-        alertes.append(f"L'offre vise un profil {analyse.niveau_experience} : profil junior en dessous.")
+        informations.append(f"Niveau visé par l'offre : {analyse.niveau_experience}.")
     contract = analyse.type_contrat
     if contract not in CONTRATS_RECHERCHES and contract != "inconnu":
-        alertes.append(f"Contrat hors cible ({contract}) : seuls CDI, CDD et thèse CIFRE sont recherchés.")
+        informations.append(f"Contrat de l'offre : {contract} (phrase d'objectif neutre utilisée).")
     in_text = _contract_in_text(offer_text)
     if in_text and in_text != contract:
-        alertes.append(f"Type de contrat à vérifier : analyse « {contract} », texte « {in_text} ».")
+        informations.append(f"Type de contrat : analyse « {contract} », texte de l'offre « {in_text} ».")
     if analyse.langue != "fr":
-        alertes.append("Offre non rédigée en français : le CV maître est en français.")
+        informations.append("Offre non rédigée en français ; le CV maître est en français.")
 
     return {"points_forts": points_forts, "competences_a_niveau_notions": notions,
-            "couvert_par_formation": formation, "manques": manques, "alertes": alertes}
+            "couvert_par_formation": formation, "manques": manques, "informations": informations}
 
 
 def assemble(selection: Selection, analyse: OffreAnalyse, master: dict) -> dict:
