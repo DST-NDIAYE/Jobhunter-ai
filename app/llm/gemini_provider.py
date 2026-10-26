@@ -1,18 +1,22 @@
 import json
 import re
 import httpx
+from pydantic import BaseModel
+
 from app.llm.base import GenerationResult, ProviderError
 
 
 class GeminiProvider:
     """Fournisseur Google Gemini : supporte l'API native generateContent et le endpoint OpenAI de Google AI Studio."""
 
-    def generate(self, *, messages: list[dict], model: str, api_key: str, timeout: float) -> GenerationResult:
+    def generate(self, *, messages: list[dict], model: str, api_key: str, timeout: float,
+                 schema: type[BaseModel] = GenerationResult) -> BaseModel:
         clean_model = model.replace("gemini/", "").strip() or "gemini-1.5-flash"
 
         # 1. Tentative via l'API native Google AI Studio (fiable, supportée sur toutes les clés)
         try:
-            return self._generate_native(messages=messages, model=clean_model, api_key=api_key, timeout=timeout)
+            return self._generate_native(messages=messages, model=clean_model, api_key=api_key, timeout=timeout,
+                                         schema=schema)
         except Exception:
             pass
 
@@ -26,11 +30,13 @@ class GeminiProvider:
                 api_key=api_key,
                 timeout=timeout,
                 openai=False,
+                schema=schema,
             )
         except Exception:
             raise ProviderError("Service Gemini indisponible ou réponse invalide.") from None
 
-    def _generate_native(self, *, messages: list[dict], model: str, api_key: str, timeout: float) -> GenerationResult:
+    def _generate_native(self, *, messages: list[dict], model: str, api_key: str, timeout: float,
+                         schema: type[BaseModel] = GenerationResult) -> BaseModel:
         system_text = ""
         user_text = ""
         for m in messages:
@@ -39,12 +45,12 @@ class GeminiProvider:
             else:
                 user_text += m.get("content", "") + "\n"
 
-        schema = GenerationResult.model_json_schema()
+        json_schema = schema.model_json_schema()
         instructions = (
             f"Consignes système :\n{system_text}\n\n"
             f"Données et contexte :\n{user_text}\n\n"
             f"Réponds UNIQUEMENT avec un objet JSON valide correspondant au schéma suivant (sans markdown superflu) :\n"
-            f"{json.dumps(schema, ensure_ascii=False)}"
+            f"{json.dumps(json_schema, ensure_ascii=False)}"
         )
 
         payload = {
@@ -75,5 +81,5 @@ class GeminiProvider:
             if raw_text.startswith("```"):
                 raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                 raw_text = re.sub(r"\s*```$", "", raw_text)
-            return GenerationResult.model_validate_json(raw_text)
+            return schema.model_validate_json(raw_text)
 

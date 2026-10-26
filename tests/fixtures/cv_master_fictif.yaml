@@ -1,0 +1,91 @@
+# CV maître FICTIF pour les tests : personne, coordonnées et missions inventées.
+
+identite:
+  prenom: "Camille"
+  nom: "EXEMPLE"
+  titre: "Data Scientist"
+  niveau_experience: "junior"
+  photo: false
+
+contacts:
+  email: "camille.exemple@example.com"
+  telephone: "06 00 11 22 33"
+  localisation: "Villefictive-sur-Test"
+  linkedin: "https://www.linkedin.com/in/camille-exemple-fictif"
+  github: "https://github.com/camille-exemple-fictif"
+
+accroches:
+  ml: "Data Scientist junior orientée Machine Learning."
+  genai: "Data Scientist junior orientée IA générative."
+
+objectifs:
+  CDI: "Je recherche un poste en CDI."
+  CDD: "Je recherche un poste en CDD."
+  these_cifre: "Je recherche un contrat de thèse CIFRE."
+  defaut: "Je recherche un poste."
+
+experiences:
+  - id: exp-fictive-ds
+    poste: "Data Scientist"
+    entreprise: "Société Fictive SA"
+    service: "Équipe Données"
+    type_contrat: "Alternance"
+    date_debut: "sept. 2024"
+    date_fin: "sept. 2025"
+    lieu: "Villefictive"
+    projets:
+      - id: prj-fictif-classif
+        titre: "Classification de tickets fictifs"
+        technologies: [Python, Scikit-learn, TF-IDF]
+        accomplissements:
+          - {id: acc-classif-01, texte: "Nettoyage des données de tickets.", tags: [preparation-donnees]}
+          - {id: acc-classif-02, texte: "Entraînement de modèles de classification.", tags: [classification]}
+          - {id: acc-classif-03, texte: "Mise en production du pipeline.", tags: [pipeline]}
+      - id: prj-fictif-rag
+        titre: "Assistant RAG fictif"
+        technologies: [Python, LangChain, FAISS]
+        accomplissements:
+          - {id: acc-rag-01, texte: "Indexation vectorielle avec FAISS.", tags: [rag]}
+          - {id: acc-rag-02, texte: "Conception du prompt de réponse.", tags: [prompt-engineering]}
+  - id: exp-fictive-stage
+    poste: "Stagiaire Data Analyst"
+    entreprise: "Laboratoire Imaginaire"
+    service: ""
+    type_contrat: "Stage"
+    date_debut: "juin 2024"
+    date_fin: "août 2024"
+    lieu: "Villefictive"
+    projets:
+      - id: prj-fictif-dashboard
+        titre: "Tableau de bord fictif"
+        technologies: [Python, Pandas]
+        accomplissements:
+          - {id: acc-dash-01, texte: "Construction d'un tableau de bord.", tags: [visualisation]}
+          - {id: acc-dash-02, texte: "Automatisation d'un rapport hebdomadaire.", tags: [automatisation]}
+
+formation:
+  - id: frm-fictif-master
+    diplome: "Master fictif de Science des Données"
+    etablissement: "Université Imaginaire"
+    date_debut: "2023"
+    date_fin: "2025"
+    lieu: "Villefictive"
+    statut: "obtenu"
+    matieres: [Deep Learning, Séries temporelles]
+
+competences:
+  langages:
+    - {nom: Python, niveau: courant, preuves: [prj-fictif-classif, prj-fictif-rag, prj-fictif-dashboard]}
+    - {nom: SQL, niveau: notions, preuves: []}
+    - {nom: R, niveau: notions, preuves: []}
+    - {nom: C, niveau: notions, preuves: []}
+  data_science:
+    - {nom: Pandas, niveau: courant, preuves: [prj-fictif-dashboard]}
+    - {nom: Scikit-learn, niveau: courant, preuves: [prj-fictif-classif]}
+    - {nom: TensorFlow, niveau: notions, preuves: []}
+  ia_generative:
+    - {nom: LangChain, niveau: courant, preuves: [prj-fictif-rag]}
+    - {nom: FAISS, niveau: courant, preuves: [prj-fictif-rag]}
+    - {nom: expressions régulières (Regex), niveau: notions, preuves: []}
+  outils:
+    - {nom: Git/GitHub, niveau: notions, preuves: []}

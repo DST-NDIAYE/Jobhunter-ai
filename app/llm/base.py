@@ -44,15 +44,18 @@ class ProviderError(Exception):
 
 class Provider(Protocol):
     def generate(self, *, messages: list[dict], model: str, api_key: str,
-                 timeout: float) -> GenerationResult: ...
+                 timeout: float, schema: type[BaseModel] = GenerationResult) -> BaseModel: ...
 
 
-def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False):
+def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False,
+                    schema: type[BaseModel] = GenerationResult):
+    # Le schéma par défaut reste celui de la candidature ; d'autres modules passent le leur.
+    name = "application_preparation" if schema is GenerationResult else schema.__name__.lower()
     payload = {
         "model": model, "messages": messages,
         "response_format": {"type": "json_schema", "json_schema": {
-            "name": "application_preparation", "strict": True,
-            "schema": GenerationResult.model_json_schema(),
+            "name": name, "strict": True,
+            "schema": schema.model_json_schema(),
         }},
         "max_completion_tokens" if openai else "max_tokens": 3000,
     }
@@ -69,6 +72,6 @@ def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False
             choice = response.json()["choices"][0]
             if choice["finish_reason"] != "stop" or choice["message"].get("refusal"):
                 raise ValueError("Réponse incomplète ou refusée.")
-            return GenerationResult.model_validate_json(choice["message"]["content"])
+            return schema.model_validate_json(choice["message"]["content"])
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         raise ProviderError("Service IA indisponible ou réponse invalide.") from None
