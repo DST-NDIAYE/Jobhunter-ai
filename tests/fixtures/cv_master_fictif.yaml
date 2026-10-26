@@ -72,6 +72,14 @@ formation:
     lieu: "Villefictive"
     statut: "obtenu"
     matieres: [Deep Learning, Séries temporelles]
+  - id: frm-fictif-licence
+    diplome: "Licence fictive de Mathématiques"
+    etablissement: "Université Imaginaire"
+    date_debut: "2020"
+    date_fin: "2023"
+    lieu: "Villefictive"
+    statut: "obtenue"
+    matieres: [Algèbre, Probabilités]
 
 competences:
   langages:

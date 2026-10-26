@@ -74,6 +74,8 @@ class SelectionTests(TailorTestCase):
         self.assertEqual([c["nom"] for c in result["competences_notions"]], ["TensorFlow", "SQL"])
         # Une expérience sans projet retenu reste dans le parcours.
         self.assertEqual(len(result["experiences"]), 2)
+        # Priorité globale du LLM, indépendante de l'ordre chronologique des expériences.
+        self.assertEqual(result["ordre_accomplissements"], ["acc-classif-02", "acc-classif-03", "acc-dash-01"])
 
     def test_unknown_accomplishment_id_is_rejected(self):
         chosen = selection(projets=[{"projet": "prj-fictif-classif",
@@ -119,6 +121,21 @@ class SelectionTests(TailorTestCase):
         with patch("app.cv_tailor.MAX_ACCOMPLISSEMENTS", 2):
             with self.assertRaisesRegex(CVTailorError, "plus de 2 accomplissements"):
                 self.run_tailor(chosen=selection())
+
+    def test_selection_priorities_use_required_and_desired_skills(self):
+        self.run_tailor(analysis=analyse(competences_souhaitees=["LangChain", "IA générative"]))
+        system, user = self.provider.calls[1]
+        for expected in ("competences_requises ET competences_souhaitees",
+                         "Un projet qui prouve une compétence souhaitée doit figurer dans la sélection"):
+            self.assertIn(expected, system["content"])
+        sent = json.loads(user["content"])["analyse_offre"]
+        self.assertEqual(sent["competences_souhaitees"], ["LangChain", "IA générative"])
+
+    def test_skills_cited_by_offer_are_computed_from_text(self):
+        result = self.run_tailor()
+        # « R&D » et « C++ » ne citent ni R ni C ; « Git » cite Git/GitHub.
+        self.assertEqual(sorted(result["competences_citees_par_offre"]),
+                         ["Git/GitHub", "Python", "SQL", "Scikit-learn", "TensorFlow"])
 
     def test_one_page_limits(self):
         self.assertEqual((cv_tailor.MAX_ACCOMPLISSEMENTS, cv_tailor.MAX_PAR_PROJET), (12, 5))
