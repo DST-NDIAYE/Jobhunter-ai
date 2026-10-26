@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter AI — Plateforme de Recrutement & Candidatures Automatiques</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              200: '#bbf7d0',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+            },
+            accent: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [v-cloak] { display: none; }
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .glass-dark {
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .glow-emerald {
+      box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.35);
+    }
+  </style>
+</head>
+<body class="h-full font-sans text-slate-800 antialiased selection:bg-brand-500 selection:text-white bg-slate-50 relative min-h-screen">
+  
+  <!-- Ambient Background Mesh -->
+  <div class="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
+    <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[1100px] h-[550px] bg-gradient-to-b from-emerald-100/50 via-teal-50/20 to-transparent blur-3xl rounded-full"></div>
+    <div class="absolute top-72 -left-48 w-[450px] h-[450px] bg-indigo-100/35 blur-3xl rounded-full"></div>
+    <div class="absolute top-96 -right-48 w-[500px] h-[500px] bg-emerald-100/40 blur-3xl rounded-full"></div>
+  </div>
+
+  <div id="app" v-cloak class="min-h-full flex flex-col pb-20 md:pb-8">
+    
+    <!-- Top Floating Luxury Navigation Bar -->
+    <header class="sticky top-0 z-40 px-3 sm:px-6 lg:px-8 pt-3 pb-2">
+      <div class="max-w-7xl mx-auto glass-panel border border-slate-200/80 rounded-2xl shadow-sm shadow-slate-900/5 px-4 sm:px-6 py-2.5 transition-all">
+        <div class="flex items-center justify-between h-12 sm:h-14">
+          
+          <!-- Brand Logo -->
+          <div class="flex items-center space-x-3 cursor-pointer group" @click="activeTab = 'search'">
+            <div class="relative">
+              <div class="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-300"></div>
+              <div class="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 border border-white/10 flex items-center justify-center text-white font-extrabold text-sm sm:text-base tracking-tighter shadow-md">
+                <span class="bg-gradient-to-tr from-emerald-400 to-teal-200 bg-clip-text text-transparent">JH</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center space-x-1.5">
+                <span class="font-extrabold text-slate-900 text-base sm:text-lg tracking-tight">JobHunter<span class="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">.ai</span></span>
+                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-md tracking-wider uppercase">Pro v2.5</span>
+              </div>
+              <p class="text-[11px] text-slate-400 hidden sm:block font-medium">Recrutement & IA Autonome</p>
+            </div>
+          </div>
+
+          <!-- Modern Center Segmented Navigation (Desktop) -->
+          <nav class="hidden md:flex items-center space-x-1 bg-slate-100/80 backdrop-blur-md p-1 rounded-2xl border border-slate-200/60 shadow-inner">
+            <button 
+              @click="activeTab = 'search'" 
+              :class="activeTab === 'search' ? 'bg-slate-900 text-white shadow-md font-semibold' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'"
+              class="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center space-x-2"
+            >
+              <i data-lucide="compass" class="w-4 h-4" :class="activeTab === 'search' ? 'text-teal-400' : 'text-teal-600'"></i>
+              <span>Offres & Match</span>
+            </button>
+
+            <button 
+              @click="activeTab = 'tracking'" 
+              :class="activeTab === 'tracking' ? 'bg-slate-900 text-white shadow-md font-semibold' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'"
+              class="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center space-x-2"
+            >
+              <i data-lucide="layout-kanban" class="w-4 h-4" :class="activeTab === 'tracking' ? 'text-emerald-400' : 'text-emerald-600'"></i>
+              <span>Pipeline & Suivi</span>
+              <span v-if="stats.sent_count > 0" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold" :class="activeTab === 'tracking' ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-800'">
+                {{ stats.sent_count }}
+              </span>
+            </button>
+
+            <button 
+              @click="activeTab = 'profile'" 
+              :class="activeTab === 'profile' ? 'bg-slate-900 text-white shadow-md font-semibold' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'"
+              class="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center space-x-2"
+            >
+              <i data-lucide="sliders" class="w-4 h-4" :class="activeTab === 'profile' ? 'text-indigo-400' : 'text-indigo-600'"></i>
+              <span>Paramètres</span>
+            </button>
+          </nav>
+
+          <!-- Right Status Capsule & Action -->
+          <div class="flex items-center space-x-3">
+            
+            <!-- Live Status Capsule -->
+            <div class="hidden lg:flex items-center space-x-2.5 bg-slate-50/90 border border-slate-200/80 px-3 py-1.5 rounded-xl text-xs shadow-sm">
+              <!-- France Travail Indicator -->
+              <div class="flex items-center space-x-1.5" :title="status.ft_configured ? 'France Travail connecté' : 'France Travail hors-ligne'">
+                <span class="relative flex h-2 w-2">
+                  <span v-if="status.ft_configured" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2" :class="status.ft_configured ? 'bg-emerald-500' : 'bg-slate-400'"></span>
+                </span>
+                <span class="font-semibold text-slate-700">FT</span>
+              </div>
+
+              <span class="text-slate-300">·</span>
+
+              <!-- Gemini Indicator -->
+              <div class="flex items-center space-x-1" :title="status.llm_configured ? 'Google Gemini Actif (' + status.llm_model + ')' : 'Moteur Local'">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5" :class="status.llm_configured ? 'text-indigo-600 animate-pulse' : 'text-slate-400'"></i>
+                <span class="font-semibold text-slate-700">{{ status.llm_configured ? 'Gemini 1.5' : 'Local' }}</span>
+              </div>
+
+              <span class="text-slate-300">·</span>
+
+              <!-- Gmail Indicator -->
+              <div class="flex items-center space-x-1" :title="status.gmail_configured ? 'Gmail connecté (' + status.gmail_user + ')' : 'Gmail non configuré'">
+                <i data-lucide="mail" class="w-3.5 h-3.5" :class="status.gmail_configured ? 'text-rose-600' : 'text-slate-400'"></i>
+                <span class="font-semibold text-slate-700">{{ status.gmail_configured ? 'Gmail' : 'Gmail Off' }}</span>
+              </div>
+
+              <span class="text-slate-300">·</span>
+
+              <!-- Candidate Profile Avatar -->
+              <div 
+                @click="activeTab = 'profile'" 
+                class="flex items-center space-x-1.5 cursor-pointer hover:opacity-80 transition"
+                :title="'Profil : ' + status.candidate_name"
+              >
+                <div class="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
+                  {{ (status.candidate_name || 'SB').slice(0, 2).toUpperCase() }}
+                </div>
+                <span class="font-semibold text-slate-800 hidden xl:inline">{{ status.candidate_name.split(' ')[0] }}</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Mobile Floating Navigation Dock (App experience at bottom) -->
+    <div class="md:hidden fixed bottom-4 left-4 right-4 z-50 glass-dark border border-white/10 rounded-2xl px-3 py-2 shadow-2xl flex items-center justify-around text-slate-400">
+      <button 
+        @click="activeTab = 'search'" 
+        :class="activeTab === 'search' ? 'text-emerald-400 font-bold scale-105' : 'hover:text-white'" 
+        class="flex flex-col items-center text-[11px] py-1 transition transform"
+      >
+        <i data-lucide="compass" class="w-5 h-5 mb-0.5"></i>
+        <span>Offres</span>
+      </button>
+
+      <button 
+        @click="activeTab = 'tracking'" 
+        :class="activeTab === 'tracking' ? 'text-emerald-400 font-bold scale-105' : 'hover:text-white'" 
+        class="flex flex-col items-center text-[11px] py-1 transition transform relative"
+      >
+        <i data-lucide="layout-kanban" class="w-5 h-5 mb-0.5"></i>
+        <span>Suivi</span>
+        <span v-if="stats.sent_count > 0" class="absolute top-0 right-1 w-2 h-2 rounded-full bg-emerald-400"></span>
+      </button>
+
+      <button 
+        @click="activeTab = 'profile'" 
+        :class="activeTab === 'profile' ? 'text-emerald-400 font-bold scale-105' : 'hover:text-white'" 
+        class="flex flex-col items-center text-[11px] py-1 transition transform"
+      >
+        <i data-lucide="sliders" class="w-5 h-5 mb-0.5"></i>
+        <span>Profil</span>
+      </button>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      
+      <!-- ========================================== -->
+      <!-- TAB 2: RECHERCHE & OFFRES                 -->
+      <!-- ========================================== -->
+      <section v-if="activeTab === 'search'" class="space-y-6">
+        
+        <!-- Search Bar Header -->
+        <div class="glass-panel rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-sm space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center space-x-2">
+                <h2 class="text-xl font-extrabold text-slate-900 tracking-tight">Recherche d'Opportunités</h2>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Multi-Canaux</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Explorez les offres France Travail avec calcul instantané du score de correspondance CV.</p>
+            </div>
+
+            <!-- Search Inputs -->
+            <form @submit.prevent="runSearch" class="flex flex-wrap items-center gap-2">
+              <div class="relative">
+                <i data-lucide="briefcase" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+                <input 
+                  type="text" 
+                  v-model="searchForm.keyword" 
+                  placeholder="Poste ou mot-clé (ex: Data Scientist)" 
+                  class="pl-9 pr-3 py-2 text-xs sm:text-sm bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 w-52 sm:w-60 shadow-inner"
+                >
+              </div>
+
+              <div class="relative">
+                <i data-lucide="map-pin" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+                <input 
+                  type="text" 
+                  v-model="searchForm.location" 
+                  placeholder="Ville (ex: Paris)" 
+                  class="pl-9 pr-3 py-2 text-xs sm:text-sm bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 w-32 shadow-inner"
+                >
+              </div>
+
+              <!-- Source Selector -->
+              <select v-model="searchForm.source" class="py-2 px-3 text-xs sm:text-sm bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold text-slate-700 shadow-inner">
+                <option value="all">🌐 Toutes plateformes</option>
+                <option value="france_travail">🇫🇷 France Travail</option>
+              </select>
+
+              <!-- Remote Selector -->
+              <select v-model="searchForm.remote" class="py-2 px-3 text-xs sm:text-sm bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 shadow-inner">
+                <option value="all">🏠 Tous modes</option>
+                <option value="full">Télétravail total</option>
+                <option value="partial">Hybride</option>
+              </select>
+
+              <select v-model="searchForm.contract" class="py-2 px-3 text-xs sm:text-sm bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner">
+                <option value="Tous">Tous contrats</option>
+                <option value="CDI">CDI</option>
+                <option value="CDD">CDD</option>
+                <option value="MIS">Intérim</option>
+              </select>
+
+              <button 
+                type="submit" 
+                :disabled="searching"
+                class="bg-slate-900 hover:bg-black text-white font-bold px-5 py-2.5 rounded-xl text-xs sm:text-sm transition flex items-center space-x-2 shadow-md shadow-slate-900/10 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50"
+              >
+                <i data-lucide="search" class="w-4 h-4 text-emerald-400" :class="{ 'animate-spin': searching }"></i>
+                <span>{{ searching ? 'Recherche…' : 'Explorer' }}</span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Offers Results Grid -->
+        <div v-if="searchResults.length > 0" class="space-y-4">
+          <div class="flex items-center justify-between text-xs text-slate-500 px-1">
+            <span>{{ searchResults.length }} offres trouvées et classées par correspondance CV</span>
+            <span class="text-emerald-700 font-semibold flex items-center space-x-1">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+              <span>Scores calculés avec votre CV Serigne Bassirou NDIAYE</span>
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div 
+              v-for="job in searchResults" 
+              :key="job.external_id"
+              class="glass-panel rounded-3xl p-6 border border-slate-200/80 hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5 transition-all duration-300 flex flex-col justify-between group"
+            >
+              <div>
+                <div class="flex items-start justify-between gap-3 mb-2">
+                  <div class="space-y-1">
+                    <div class="flex items-center space-x-2">
+                      <!-- Source Badge -->
+                      <span v-if="job.source === 'wttj'" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-400 text-slate-900 border border-amber-500">
+                        🌴 WTTJ
+                      </span>
+                      <span v-else-if="job.source === 'apec'" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-sky-100 text-sky-800 border border-sky-200">
+                        👔 Apec Cadres
+                      </span>
+                      <span v-else class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+                        France Travail
+                      </span>
+
+                      <!-- Remote Badge -->
+                      <span v-if="job.remote === 'full'" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        🏠 100% Remote
+                      </span>
+                      <span v-else-if="job.remote === 'partial'" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                        🏢 Hybride
+                      </span>
+                    </div>
+
+                    <h3 class="font-bold text-slate-900 text-base leading-snug line-clamp-2">
+                      {{ job.title || 'Offre sans titre' }}
+                    </h3>
+                  </div>
+
+                  <!-- Match Badge -->
+                  <div class="flex-shrink-0 flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-bold" :class="job.match_score >= 70 ? 'bg-emerald-100 text-emerald-800' : job.match_score >= 40 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'">
+                    <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+                    <span>{{ job.match_score !== null ? job.match_score + '%' : 'N/A' }}</span>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-y-1 gap-x-3 text-xs text-slate-500 mb-3">
+                  <span class="font-semibold text-slate-700 flex items-center">
+                    <i data-lucide="building" class="w-3.5 h-3.5 mr-1 text-slate-400"></i>
+                    {{ job.company || 'Entreprise confidentielle' }}
+                  </span>
+                  <span class="flex items-center">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 mr-1 text-slate-400"></i>
+                    {{ job.location || 'France' }}
+                  </span>
+                  <span v-if="job.contract_type" class="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-medium">
+                    {{ job.contract_type }}
+                  </span>
+                </div>
+
+                <p class="text-xs text-slate-600 line-clamp-3 leading-relaxed mb-4">
+                  {{ job.description || 'Consultez la fiche détaillée pour lire la description complète du poste.' }}
+                </p>
+              </div>
+
+              <!-- Action Bar -->
+              <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <a 
+                  v-if="job.url" 
+                  :href="job.url" 
+                  target="_blank" 
+                  class="text-xs font-medium text-slate-600 hover:text-brand-600 flex items-center space-x-1"
+                >
+                  <span>{{ job.source === 'wttj' ? 'Voir sur WTTJ' : 'Voir sur France Travail' }}</span>
+                  <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                </a>
+                <span v-else class="text-xs text-slate-400">Réf. {{ job.external_id }}</span>
+
+                <div class="flex items-center space-x-2">
+                  <button 
+                    @click="openJobModal(job)" 
+                    class="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition flex items-center space-x-1"
+                  >
+                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                    <span>Détails</span>
+                  </button>
+                  <button 
+                    @click="applySingleOffer(job, false)" 
+                    class="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+                  >
+                    Vérifier
+                  </button>
+                  <button 
+                    @click="applySingleOffer(job, true)" 
+                    class="px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-xs font-bold text-white transition flex items-center space-x-1 shadow-sm"
+                  >
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    <span>Postuler</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-else-if="!searching" class="bg-white rounded-2xl p-12 text-center border border-slate-200">
+          <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-4">
+            <i data-lucide="search" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-base font-bold text-slate-900 mb-1">Lancez une recherche pour voir les offres</h3>
+          <p class="text-xs text-slate-500 max-w-md mx-auto mb-6">
+            Renseignez votre intitulé de poste recherché et votre ville dans la barre de recherche ci-dessus pour afficher et classer les offres.
+          </p>
+          <button @click="runSearch" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
+            Rechercher "Data Scientist" à Paris
+          </button>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 3: SUIVI & PIPELINE                   -->
+      <!-- ========================================== -->
+      <section v-if="activeTab === 'tracking'" class="space-y-6">
+        
+        <!-- KPI Metrics Grid -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div @click="trackingFilter = 'sent'; fetchApplications();" class="cursor-pointer hover:border-emerald-500 hover:shadow-xl hover:shadow-slate-900/5 hover:-translate-y-0.5 transition-all duration-300 glass-panel rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex items-center justify-between" title="Cliquer pour afficher les candidatures envoyées">
+            <div>
+              <p class="text-xs font-semibold text-slate-500 mb-1">Candidatures envoyées</p>
+              <h3 class="text-2xl sm:text-3xl font-black text-slate-900">{{ stats.sent_count }}</h3>
+            </div>
+            <div class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200/60 flex items-center justify-center shadow-sm">
+              <i data-lucide="send" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div @click="trackingFilter = 'interview'; fetchApplications();" class="cursor-pointer hover:border-emerald-500 hover:shadow-xl hover:shadow-slate-900/5 hover:-translate-y-0.5 transition-all duration-300 glass-panel rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex items-center justify-between" title="Cliquer pour afficher les entretiens">
+            <div>
+              <p class="text-xs font-semibold text-slate-500 mb-1">Entretiens obtenus</p>
+              <h3 class="text-2xl sm:text-3xl font-black text-emerald-600">{{ stats.interview_count }}</h3>
+            </div>
+            <div class="w-11 h-11 rounded-2xl bg-teal-50 text-teal-600 border border-teal-200/60 flex items-center justify-center shadow-sm">
+              <i data-lucide="calendar" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div @click="trackingFilter = 'remind'; fetchApplications();" class="cursor-pointer hover:border-amber-500 hover:shadow-xl hover:shadow-slate-900/5 hover:-translate-y-0.5 transition-all duration-300 glass-panel rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex items-center justify-between" title="Cliquer pour afficher les relances à faire">
+            <div>
+              <p class="text-xs font-semibold text-slate-500 mb-1">À relancer (+7 jours)</p>
+              <h3 class="text-2xl sm:text-3xl font-black text-amber-600">{{ stats.remind_count }}</h3>
+            </div>
+            <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/60 flex items-center justify-center shadow-sm">
+              <i data-lucide="clock" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div @click="trackingFilter = 'all'; fetchApplications();" class="cursor-pointer hover:border-indigo-500 hover:shadow-xl hover:shadow-slate-900/5 hover:-translate-y-0.5 transition-all duration-300 glass-panel rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex items-center justify-between" title="Cliquer pour tout afficher">
+            <div>
+              <p class="text-xs font-semibold text-slate-500 mb-1">Total suivi</p>
+              <h3 class="text-2xl sm:text-3xl font-black text-indigo-600">{{ stats.total_tracked }}</h3>
+            </div>
+            <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-200/60 flex items-center justify-center shadow-sm">
+              <i data-lucide="git-branch" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Controls -->
+        <div class="glass-panel rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div class="flex items-center space-x-1 bg-slate-100/80 p-1 rounded-2xl w-full sm:w-auto text-xs font-medium overflow-x-auto shadow-inner">
+            <button 
+              v-for="filter in [
+                { id: 'all', label: 'Toutes (' + stats.total_tracked + ')' },
+                { id: 'sent', label: 'Envoyées (' + stats.sent_count + ')' },
+                { id: 'interview', label: 'Entretiens (' + stats.interview_count + ')' },
+                { id: 'remind', label: 'À relancer (' + stats.remind_count + ')' },
+              ]"
+              :key="filter.id"
+              @click="trackingFilter = filter.id; fetchApplications();"
+              :class="trackingFilter === filter.id ? 'bg-slate-900 text-white shadow-md font-bold' : 'text-slate-600 hover:text-slate-900'"
+              class="px-3.5 py-1.5 rounded-xl transition whitespace-nowrap"
+            >
+              {{ filter.label }}
+            </button>
+          </div>
+
+          <div class="flex items-center space-x-2 w-full sm:w-auto">
+            <div class="relative flex-1 sm:w-64">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+              <input 
+                type="text" 
+                v-model="trackingSearch" 
+                @input="fetchApplications"
+                placeholder="Filtrer une entreprise ou poste…" 
+                class="w-full pl-9 pr-3 py-1.5 text-xs bg-white/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+              >
+            </div>
+            <button 
+              @click="exportCSV" 
+              class="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-sm transition"
+              title="Télécharger l'historique en CSV"
+            >
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Applications Cards List -->
+        <div v-if="applications.length > 0" class="space-y-4">
+          <div 
+            v-for="app in applications" 
+            :key="app.source + '_' + app.external_id"
+            class="glass-panel rounded-3xl p-6 border border-slate-200/80 hover:shadow-lg transition-all duration-200 space-y-3"
+          >
+            <!-- Card Header -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div class="flex items-center space-x-2">
+                  <span v-if="app.application_channel === 'EMAIL' || app.gmail_draft_id" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex items-center space-x-1">
+                    <i data-lucide="mail" class="w-3 h-3"></i>
+                    <span>Email Gmail</span>
+                  </span>
+                  <span v-else class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="app.source === 'france_travail' ? 'bg-blue-50 text-blue-700 border border-blue-200' : (app.source === 'wttj' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-teal-50 text-teal-700 border border-teal-200')">
+                    {{ app.source === 'france_travail' ? 'France Travail' : (app.source === 'wttj' ? '🌴 WTTJ' : 'La Bonne Boîte') }}
+                  </span>
+                  <span class="text-xs text-slate-400">Postulé / Créé le {{ formatDate(app.application_sent_at || app.status_updated_at || app.first_seen_at) }}</span>
+                </div>
+                <h4 class="text-base font-bold text-slate-900 mt-1">{{ app.title || 'Opportunité spontanée' }}</h4>
+                <p class="text-xs text-slate-600 font-medium">{{ app.company || 'Entreprise' }} · {{ app.location || 'France' }}</p>
+              </div>
+
+              <!-- Interactive Status Selector -->
+              <div class="flex items-center space-x-2">
+                <label class="text-xs font-semibold text-slate-500">Statut :</label>
+                <select 
+                  v-model="app.application_status" 
+                  @change="updateStatus(app)"
+                  class="text-xs font-bold py-1.5 px-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  :class="
+                    app.application_status === 'Entretien' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                    app.application_status === 'Candidature envoyée' ? 'bg-blue-50 text-blue-800 border-blue-300' :
+                    app.application_status === 'Refus' ? 'bg-rose-50 text-rose-800 border-rose-300' :
+                    app.application_status === 'Relancée' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                    'bg-slate-100 text-slate-800 border-slate-200'
+                  "
+                >
+                  <option value="Candidature envoyée">🎯 Candidature envoyée</option>
+                  <option value="Entretien">🎉 Entretien décroché</option>
+                  <option value="Relancée">⏳ Relancée</option>
+                  <option value="À étudier">À étudier</option>
+                  <option value="Refus">❌ Refus</option>
+                  <option value="Archivée">Archivée</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Notes & Letter Preview Toggle -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+              
+              <!-- Personal Notes -->
+              <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Notes personnelles</label>
+                <div class="flex items-center space-x-2">
+                  <input 
+                    type="text" 
+                    v-model="app.personal_notes" 
+                    @blur="updateStatus(app)"
+                    placeholder="Ex: relancé par email, contact RH, date d'entretien…"
+                    class="w-full text-xs px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                  <button @click="updateStatus(app)" class="text-xs text-brand-600 hover:text-brand-800 font-semibold px-2 py-1">Sauver</button>
+                </div>
+              </div>
+
+              <!-- Sent Letter Preview -->
+              <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Lettre de motivation</label>
+                <button 
+                  v-if="app.application_letter" 
+                  @click="openLetterModal(app)"
+                  class="text-xs text-accent-600 hover:text-accent-800 font-medium flex items-center space-x-1 py-1"
+                >
+                  <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                  <span>Lire la lettre envoyée sur-mesure</span>
+                </button>
+                <span v-else class="text-xs text-slate-400 italic">Lettre générée lors de l'envoi</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty Tracking State -->
+        <div v-else class="bg-white rounded-2xl p-12 text-center border border-slate-200">
+          <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-4">
+            <i data-lucide="inbox" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-base font-bold text-slate-900 mb-1">Aucune candidature dans cette vue</h3>
+          <p class="text-xs text-slate-500 max-w-md mx-auto mb-6">
+            Postulez à une offre pour voir vos candidatures et leur suivi s'afficher ici.
+          </p>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 4: PROFIL & PARAMÈTRES                -->
+      <!-- ========================================== -->
+      <section v-if="activeTab === 'profile'" class="space-y-6">
+        <div class="glass-panel rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h2 class="text-xl font-extrabold text-slate-900 tracking-tight">Profil Candidat & Configuration</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Ces informations sont injectées par le robot lors du remplissage des candidatures.</p>
+            </div>
+            <button @click="saveProfile" class="hidden sm:inline-flex bg-slate-900 hover:bg-black text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-sm hover:-translate-y-0.5 transition-all">
+              Enregistrer
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Candidate Identity -->
+            <div class="space-y-4">
+              <h3 class="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center space-x-2">
+                <i data-lucide="user-check" class="w-4 h-4 text-emerald-600"></i>
+                <span>Coordonnées du candidat</span>
+              </h3>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-semibold text-slate-700 block mb-1">Prénom</label>
+                  <input type="text" v-model="profileData.first_name" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-slate-700 block mb-1">Nom</label>
+                  <input type="text" v-model="profileData.last_name" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+                </div>
+              </div>
+
+              <div>
+                <label class="text-xs font-semibold text-slate-700 block mb-1">Email</label>
+                <input type="email" v-model="profileData.email" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-semibold text-slate-700 block mb-1">Téléphone</label>
+                  <input type="text" v-model="profileData.phone" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-slate-700 block mb-1">Ville / Région</label>
+                  <input type="text" v-model="profileData.city" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+                </div>
+              </div>
+
+              <div>
+                <label class="text-xs font-semibold text-slate-700 block mb-1">Profil LinkedIn</label>
+                <input type="text" v-model="profileData.linkedin_url" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl bg-white/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner transition">
+              </div>
+            </div>
+
+            <!-- CV Status & Technical Parameters -->
+            <div class="space-y-4">
+              <h3 class="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center space-x-2">
+                <i data-lucide="file-check-2" class="w-4 h-4 text-emerald-600"></i>
+                <span>CV & Connexions</span>
+              </h3>
+
+              <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div class="flex items-center space-x-2 text-emerald-800 font-bold text-xs mb-1">
+                  <i data-lucide="check-circle" class="w-4 h-4"></i>
+                  <span>CV Principal Détecté</span>
+                </div>
+                <div class="text-xs text-emerald-700 font-mono">{{ status.cv_name || 'CV_Serigne Bassirou_NDIAYE.pdf' }}</div>
+                <div class="text-[11px] text-emerald-600 mt-1">Utilisé pour l'upload Playwright et le scoring IA.</div>
+              </div>
+
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs font-bold text-slate-800">France Travail API</div>
+                    <div class="text-xs text-slate-600">Client ID & Client Secret configurés dans le fichier <code>.env</code>.</div>
+                  </div>
+                  <button 
+                    @click="testConnection" 
+                    class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-xs font-semibold text-slate-700 rounded-lg shadow-sm transition"
+                  >
+                    Tester la connexion
+                  </button>
+                </div>
+                <div class="flex items-center space-x-1.5 text-xs text-emerald-700 font-medium">
+                  <i data-lucide="shield-check" class="w-4 h-4"></i>
+                  <span>Authentification SSO active</span>
+                </div>
+              </div>
+
+              <!-- Gemini AI Status Box -->
+              <div class="p-4 rounded-xl border space-y-2" :class="status.llm_configured ? 'bg-indigo-50/70 border-indigo-200' : 'bg-slate-50 border-slate-200'">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-2">
+                    <i data-lucide="sparkles" class="w-4 h-4" :class="status.llm_configured ? 'text-indigo-600' : 'text-slate-400'"></i>
+                    <span class="text-xs font-bold text-slate-800">Moteur IA (Lettres & Messages)</span>
+                  </div>
+                  <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full" :class="status.llm_configured ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-slate-200 text-slate-700'">
+                    {{ status.llm_configured ? 'Google Gemini Actif' : 'Modèle Local' }}
+                  </span>
+                </div>
+                <div class="text-xs text-slate-600">
+                  Modèle IA : <code class="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono font-semibold">{{ status.llm_model || 'gemini-1.5-flash' }}</code>
+                </div>
+                <div class="text-[11px] text-slate-500">
+                  Génère instantanément des lettres percutantes et humaines qui valorisent vos compétences clés sans hallucination.
+                </div>
+              </div>
+
+              <!-- Gmail Integration Status Box -->
+              <div class="p-4 rounded-xl border space-y-2.5" :class="status.gmail_configured ? 'bg-rose-50/70 border-rose-200' : 'bg-slate-50 border-slate-200'">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-2">
+                    <i data-lucide="mail" class="w-4 h-4" :class="status.gmail_configured ? 'text-rose-600' : 'text-slate-400'"></i>
+                    <span class="text-xs font-bold text-slate-800">Candidatures par Email (Gmail)</span>
+                  </div>
+                  <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full" :class="status.gmail_configured ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-slate-200 text-slate-700'">
+                    {{ status.gmail_configured ? 'Gmail Connecté' : 'Non configuré' }}
+                  </span>
+                </div>
+                <div class="text-xs text-slate-600 flex items-center justify-between">
+                  <span>Compte : <code class="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono font-semibold">{{ status.gmail_user || profileData.email }}</code></span>
+                  <button 
+                    @click="testGmailConnection" 
+                    :disabled="testingGmail"
+                    class="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-[11px] font-semibold text-slate-700 rounded-lg shadow-sm transition"
+                  >
+                    {{ testingGmail ? 'Test…' : 'Tester' }}
+                  </button>
+                </div>
+                <div class="text-[11px] text-slate-500 leading-relaxed">
+                  Crée des brouillons dans votre boîte Gmail avec votre CV attaché. Ajoutez <code>GMAIL_APP_PASSWORD</code> dans votre <code>.env</code> (<a href="https://myaccount.google.com/apppasswords" target="_blank" class="text-rose-600 underline font-semibold">générer un mot de passe en 30s</a>).
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-4 border-t border-slate-100 flex justify-end">
+            <button @click="saveProfile" class="bg-slate-900 hover:bg-black text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-sm transition">
+              Enregistrer les modifications
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Modal Détail Offre -->
+    <div v-if="selectedJobModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] flex flex-col justify-between">
+        <div class="space-y-4 overflow-y-auto custom-scrollbar pr-1">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="flex items-center space-x-2 mb-1.5 flex-wrap gap-1">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold" :class="(selectedJobModal.match_score || 0) >= 70 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'">
+                  {{ selectedJobModal.match_score !== null && selectedJobModal.match_score !== undefined ? selectedJobModal.match_score + '% Match CV' : 'Match N/A' }}
+                </span>
+                <span v-if="selectedJobModal.source === 'wttj'" class="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-400 text-slate-900">
+                  🌴 Welcome to the Jungle
+                </span>
+                <span v-else-if="selectedJobModal.source === 'apec'" class="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-sky-100 text-sky-800">
+                  👔 Apec Cadres
+                </span>
+                <span v-else class="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 text-blue-800">
+                  France Travail
+                </span>
+                <span v-if="selectedJobModal.remote === 'full'" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  🏠 Télétravail total
+                </span>
+                <span v-else-if="selectedJobModal.remote === 'partial'" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-800">
+                  🏢 Hybride
+                </span>
+                <span class="text-xs text-slate-500 font-medium">{{ selectedJobModal.contract_type || 'CDI' }}</span>
+              </div>
+              <h3 class="font-bold text-slate-900 text-lg leading-snug">{{ selectedJobModal.title }}</h3>
+              <p class="text-xs text-slate-600 font-medium">{{ selectedJobModal.company || 'Entreprise' }} · {{ selectedJobModal.location || 'France' }}</p>
+            </div>
+            <button @click="selectedJobModal = null" class="text-slate-400 hover:text-slate-600">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+
+          <!-- Job Description -->
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-line">
+            {{ selectedJobModal.description || 'Aucune description disponible pour cette offre.' }}
+          </div>
+
+          <!-- Hyper-personalized Cover Letter Generation (Feature 3) -->
+          <div class="border border-indigo-100 rounded-2xl p-4 bg-indigo-50/40 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i>
+                <span>Lettre de motivation sur-mesure</span>
+              </span>
+              <div class="flex items-center space-x-1.5">
+                <select v-model="jobModalTone" class="text-xs bg-white border border-slate-200 rounded-lg py-1.5 px-2 font-medium">
+                  <option value="modern">⚡ Moderne & Tech</option>
+                  <option value="classic">🏛️ Classique Entreprise</option>
+                  <option value="impact">🎯 Impact ROI</option>
+                </select>
+                <button 
+                  @click="generateLetterForModal(selectedJobModal)" 
+                  :disabled="generatingLetter"
+                  class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-xs rounded-lg transition shadow-sm flex items-center space-x-1"
+                >
+                  <i data-lucide="refresh-cw" class="w-3 h-3" :class="{ 'animate-spin': generatingLetter }"></i>
+                  <span>{{ generatingLetter ? 'Génération…' : 'Générer' }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="modalLetterContent" class="space-y-2">
+              <div class="p-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 whitespace-pre-line leading-relaxed max-h-40 overflow-y-auto custom-scrollbar font-sans">
+                {{ modalLetterContent }}
+              </div>
+              <div class="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Rédigé sur-mesure pour Serigne Bassirou NDIAYE</span>
+                <button @click="copyText(modalLetterContent)" class="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center space-x-1">
+                  <i data-lucide="copy" class="w-3 h-3"></i>
+                  <span>Copier le texte</span>
+                </button>
+              </div>
+            </div>
+            <div v-else class="text-xs text-slate-400 italic text-center py-2">
+              Cliquez sur « Générer » pour rédiger instantanément une lettre alignée avec vos compétences et cette offre.
+            </div>
+          </div>
+
+          <!-- Email Direct Application (Gmail) -->
+          <div class="border border-rose-100 rounded-2xl p-4 bg-rose-50/40 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <i data-lucide="mail" class="w-4 h-4 text-rose-600"></i>
+                <span>Candidature directe par Email (Gmail)</span>
+              </span>
+              <span v-if="selectedJobModal.contact_email" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                Email détecté
+              </span>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div class="relative flex-1">
+                <i data-lucide="at-sign" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5"></i>
+                <input 
+                  type="email" 
+                  v-model="modalRecruiterEmail" 
+                  placeholder="Email du recruteur (ex: recrutement@entreprise.fr)" 
+                  class="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                >
+              </div>
+              <div class="flex items-center space-x-1.5">
+                <button 
+                  @click="dispatchGmail(selectedJobModal, 'draft')" 
+                  :disabled="sendingGmail || !modalRecruiterEmail"
+                  class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-sm flex items-center space-x-1 transition"
+                  title="Créer le brouillon dans votre boîte Gmail avec CV attaché"
+                >
+                  <i data-lucide="file-plus" class="w-3.5 h-3.5"></i>
+                  <span>{{ sendingGmail ? 'Création…' : 'Brouillon Gmail' }}</span>
+                </button>
+                <button 
+                  @click="dispatchGmail(selectedJobModal, 'send')" 
+                  :disabled="sendingGmail || !modalRecruiterEmail"
+                  class="px-3 py-1.5 bg-slate-900 hover:bg-black disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-sm flex items-center space-x-1 transition"
+                  title="Envoyer directement l'email avec le CV en pièce jointe"
+                >
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                  <span>Envoyer</span>
+                </button>
+              </div>
+            </div>
+            <div class="text-[11px] text-slate-500">
+              Votre CV (<code>{{ status.cv_name || 'CV.pdf' }}</code>) et votre lettre seront automatiquement attachés.
+            </div>
+          </div>
+
+          <!-- Chasseur de Décideurs & Approche Directe (Feature 3) -->
+          <div class="border border-sky-200/90 rounded-2xl p-4 bg-sky-50/50 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <i data-lucide="crosshair" class="w-4 h-4 text-sky-600"></i>
+                <span>Chasseur de Décideurs & Approche Directe (LinkedIn)</span>
+              </span>
+              <button 
+                @click="huntLeadsForModal(selectedJobModal)" 
+                :disabled="huntingLeads"
+                class="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-sm flex items-center space-x-1.5 transition"
+              >
+                <i data-lucide="radar" class="w-3.5 h-3.5" :class="{ 'animate-spin': huntingLeads }"></i>
+                <span>{{ huntingLeads ? 'Recherche…' : (modalLeadOutreach ? 'Actualiser' : 'Identifier les décideurs') }}</span>
+              </button>
+            </div>
+
+            <div v-if="modalLeadOutreach" class="space-y-3 pt-2">
+              <!-- LinkedIn Quick Access Buttons -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <a 
+                  :href="modalLeadOutreach.tech_lead_url" 
+                  target="_blank" 
+                  class="px-3 py-2 bg-white border border-sky-200 hover:border-sky-400 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between shadow-sm hover:shadow transition group"
+                  title="Rechercher le Head of Data ou Lead ML sur LinkedIn"
+                >
+                  <span class="flex items-center space-x-1.5 truncate">
+                    <i data-lucide="award" class="w-3.5 h-3.5 text-sky-600 flex-shrink-0"></i>
+                    <span class="truncate">Tech Lead / Head of</span>
+                  </span>
+                  <i data-lucide="external-link" class="w-3 h-3 text-slate-400 group-hover:text-sky-600 flex-shrink-0"></i>
+                </a>
+
+                <a 
+                  :href="modalLeadOutreach.recruiter_url" 
+                  target="_blank" 
+                  class="px-3 py-2 bg-white border border-sky-200 hover:border-sky-400 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between shadow-sm hover:shadow transition group"
+                  title="Rechercher le Tech Recruiter sur LinkedIn"
+                >
+                  <span class="flex items-center space-x-1.5 truncate">
+                    <i data-lucide="users" class="w-3.5 h-3.5 text-emerald-600 flex-shrink-0"></i>
+                    <span class="truncate">Recruteur Tech</span>
+                  </span>
+                  <i data-lucide="external-link" class="w-3 h-3 text-slate-400 group-hover:text-sky-600 flex-shrink-0"></i>
+                </a>
+
+                <a 
+                  :href="modalLeadOutreach.google_xray_url" 
+                  target="_blank" 
+                  class="px-3 py-2 bg-white border border-sky-200 hover:border-sky-400 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between shadow-sm hover:shadow transition group"
+                  title="Rechercher via Google X-Ray (profils publics sans être connecté)"
+                >
+                  <span class="flex items-center space-x-1.5 truncate">
+                    <i data-lucide="globe" class="w-3.5 h-3.5 text-indigo-600 flex-shrink-0"></i>
+                    <span class="truncate">Google X-Ray</span>
+                  </span>
+                  <i data-lucide="external-link" class="w-3 h-3 text-slate-400 group-hover:text-sky-600 flex-shrink-0"></i>
+                </a>
+              </div>
+
+              <!-- Message Angles Tabs (Tech Lead vs Recruiter) -->
+              <div class="flex items-center space-x-2 pt-1 border-t border-sky-100">
+                <button 
+                  @click="leadTargetRole = 'tech_lead'"
+                  class="px-3 py-1 text-xs font-bold rounded-lg transition"
+                  :class="leadTargetRole === 'tech_lead' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'"
+                >
+                  Angle Tech Lead
+                </button>
+                <button 
+                  @click="leadTargetRole = 'recruiter'"
+                  class="px-3 py-1 text-xs font-bold rounded-lg transition"
+                  :class="leadTargetRole === 'recruiter' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'"
+                >
+                  Angle Recruteur RH
+                </button>
+              </div>
+
+              <!-- Content for Active Angle -->
+              <div class="space-y-2.5">
+                <!-- 1. Connection Note (< 300 chars) -->
+                <div class="bg-white p-3 rounded-xl border border-sky-200/80 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <span class="font-bold text-slate-700 flex items-center space-x-1">
+                      <i data-lucide="message-square" class="w-3.5 h-3.5 text-sky-600"></i>
+                      <span>Note d'invitation LinkedIn (Demande de contact)</span>
+                    </span>
+                    <span class="text-slate-400 font-mono text-[10px]">
+                      {{ (leadTargetRole === 'tech_lead' ? modalLeadOutreach.lead_connection_note : modalLeadOutreach.recruiter_connection_note).length }}/300 car. (Garanti)
+                    </span>
+                  </div>
+                  <div class="text-xs text-slate-700 font-sans leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100 select-text">
+                    {{ leadTargetRole === 'tech_lead' ? modalLeadOutreach.lead_connection_note : modalLeadOutreach.recruiter_connection_note }}
+                  </div>
+                  <div class="flex justify-end">
+                    <button 
+                      @click="copyText(leadTargetRole === 'tech_lead' ? modalLeadOutreach.lead_connection_note : modalLeadOutreach.recruiter_connection_note)"
+                      class="text-xs font-bold text-sky-600 hover:text-sky-800 flex items-center space-x-1 transition"
+                    >
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                      <span>Copier la note</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 2. Full InMail / Direct Email -->
+                <div class="bg-white p-3 rounded-xl border border-sky-200/80 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <span class="font-bold text-slate-700 flex items-center space-x-1">
+                      <i data-lucide="send" class="w-3.5 h-3.5 text-indigo-600"></i>
+                      <span>Message InMail direct (~120 mots)</span>
+                    </span>
+                    <span class="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                      {{ modalLeadOutreach.generated_by }}
+                    </span>
+                  </div>
+                  <div class="text-xs text-slate-700 font-sans leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100 max-h-36 overflow-y-auto custom-scrollbar select-text whitespace-pre-line">
+                    {{ leadTargetRole === 'tech_lead' ? modalLeadOutreach.lead_inmail : modalLeadOutreach.recruiter_inmail }}
+                  </div>
+                  <div class="flex justify-end">
+                    <button 
+                      @click="copyText(leadTargetRole === 'tech_lead' ? modalLeadOutreach.lead_inmail : modalLeadOutreach.recruiter_inmail)"
+                      class="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 transition"
+                    >
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                      <span>Copier l'InMail</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-[11px] text-slate-500 italic">
+              Cliquez sur « Identifier les décideurs » pour obtenir instantanément les requêtes LinkedIn du Tech Lead / Recruteur et des messages d'accroche personnalisés rédigés par l'IA.
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Footer -->
+        <div class="flex items-center justify-between pt-3 border-t border-slate-100">
+          <a v-if="selectedJobModal.url" :href="selectedJobModal.url" target="_blank" class="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center space-x-1.5 transition">
+            <span>{{ selectedJobModal.source === 'wttj' ? 'Ouvrir sur WTTJ' : (selectedJobModal.source === 'apec' ? 'Ouvrir sur Apec' : 'Ouvrir sur France Travail') }}</span>
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          </a>
+          <span v-else class="text-xs text-slate-400 font-mono">Réf. {{ selectedJobModal.external_id }}</span>
+          <div class="flex items-center space-x-2">
+            <button @click="selectedJobModal = null" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition">
+              Fermer
+            </button>
+            <button @click="applySingleOffer(selectedJobModal, false); selectedJobModal = null;" class="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition">
+              Vérifier
+            </button>
+            <button @click="applySingleOffer(selectedJobModal, true); selectedJobModal = null;" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-md shadow-emerald-600/20 transition flex items-center space-x-1.5">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+              <span>Postuler en 1 clic</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Lettre de Motivation -->
+    <div v-if="selectedLetterApp" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200/80 space-y-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="flex items-center space-x-2 mb-1">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200/60 flex items-center space-x-1">
+                <i data-lucide="sparkles" class="w-3 h-3 text-indigo-600"></i>
+                <span>Générée par Gemini 1.5</span>
+              </span>
+            </div>
+            <h3 class="font-extrabold text-slate-900 text-lg tracking-tight">Lettre de motivation personnalisée</h3>
+            <p class="text-xs text-slate-500 mt-0.5 font-medium">{{ selectedLetterApp.title }} · <span class="font-bold text-slate-700">{{ selectedLetterApp.company }}</span></p>
+          </div>
+          <button @click="selectedLetterApp = null" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200 text-xs sm:text-sm font-sans text-slate-700 whitespace-pre-line leading-relaxed max-h-96 overflow-y-auto custom-scrollbar select-text shadow-inner">
+          {{ selectedLetterApp.application_letter }}
+        </div>
+
+        <div class="flex items-center justify-between pt-2">
+          <button @click="copyText(selectedLetterApp.application_letter)" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition">
+            <i data-lucide="copy" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>Copier le texte</span>
+          </button>
+          <button @click="selectedLetterApp = null" class="bg-slate-900 hover:bg-black text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-sm transition">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div v-if="toast.show" class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center space-x-2 text-xs font-medium border border-slate-800 transition transform animate-bounce">
+      <i data-lucide="info" class="w-4 h-4 text-brand-400"></i>
+      <span>{{ toast.message }}</span>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, nextTick, watch } = Vue;
+
+    createApp({
+      setup() {
+        const activeTab = ref('search');
+        const status = ref({
+          cv_ready: true,
+          candidate_name: 'Serigne Bassirou NDIAYE',
+          ft_configured: true,
+          cv_name: 'CV_Serigne Bassirou_NDIAYE.pdf'
+        });
+        const stats = ref({
+          sent_count: 0,
+          interview_count: 0,
+          remind_count: 0,
+          pipeline_count: 0,
+          total_tracked: 0
+        });
+
+        // Recherche (Feature 5)
+        const searchForm = ref({
+          keyword: 'Data Scientist',
+          location: 'Paris',
+          contract: 'Tous',
+          source: 'all',
+          remote: 'all'
+        });
+        const searching = ref(false);
+        const searchResults = ref([]);
+        const selectedJobModal = ref(null);
+        const jobModalTone = ref('modern');
+        const generatingLetter = ref(false);
+        const modalLetterContent = ref('');
+        const modalRecruiterEmail = ref('');
+        const sendingGmail = ref(false);
+        const testingGmail = ref(false);
+        const huntingLeads = ref(false);
+        const modalLeadOutreach = ref(null);
+        const leadTargetRole = ref('tech_lead');
+
+        // Suivi
+        const trackingFilter = ref('all');
+        const trackingSearch = ref('');
+        const applications = ref([]);
+        const selectedLetterApp = ref(null);
+
+        // Profil
+        const profileData = ref({
+          first_name: 'Serigne Bassirou',
+          last_name: 'NDIAYE',
+          email: 'dstndiaye@gmail.com',
+          phone: '07 58 64 47 06',
+          city: 'Île-de-France',
+          linkedin_url: 'https://www.linkedin.com/in/dst-ndiaye',
+          portfolio_url: 'https://github.com/DST-NDIAYE'
+        });
+
+        // Toast
+        const toast = ref({ show: false, message: '' });
+        function showToast(msg) {
+          toast.value = { show: true, message: msg };
+          setTimeout(() => { toast.value.show = false; }, 3500);
+        }
+
+        // Format Date
+        function formatDate(dStr) {
+          if (!dStr) return 'Récemment';
+          try {
+            const d = new Date(dStr);
+            return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          } catch(e) {
+            return dStr;
+          }
+        }
+
+        function refreshIcons() {
+          nextTick(() => {
+            if (window.lucide) {
+              window.lucide.createIcons();
+            }
+          });
+        }
+
+        // Fetch System Status
+        async function fetchStatus() {
+          try {
+            const res = await fetch('/api/status');
+            if (res.ok) {
+              const data = await res.json();
+              status.value = data;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Fetch Stats
+        async function fetchStats() {
+          try {
+            const res = await fetch('/api/stats');
+            if (res.ok) {
+              stats.value = await res.json();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Fetch Applications
+        async function fetchApplications() {
+          try {
+            let url = `/api/applications?status=${trackingFilter.value}`;
+            if (trackingSearch.value) {
+              url += `&search=${encodeURIComponent(trackingSearch.value)}`;
+            }
+            const res = await fetch(url);
+            if (res.ok) {
+              applications.value = await res.json();
+              refreshIcons();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Update Application Status & Notes
+        async function updateStatus(app) {
+          try {
+            const res = await fetch(`/api/applications/${app.source}/${app.external_id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                status: app.application_status,
+                personal_notes: app.personal_notes
+              })
+            });
+            if (res.ok) {
+              showToast(`Statut mis à jour : ${app.application_status}`);
+              fetchStats();
+            }
+          } catch(e) {
+            showToast('Erreur lors de la sauvegarde');
+          }
+        }
+
+        // Run Search (Supports France Travail & WTTJ + Remote)
+        async function runSearch() {
+          searching.value = true;
+          try {
+            const params = new URLSearchParams({
+              keyword: searchForm.value.keyword || '',
+              location: searchForm.value.location || '',
+              contract: searchForm.value.contract || 'Tous',
+              source: searchForm.value.source || 'all',
+              remote: searchForm.value.remote || 'all',
+              limit: 20
+            });
+            const res = await fetch(`/api/jobs/search?${params.toString()}`);
+            if (res.ok) {
+              searchResults.value = await res.json();
+              showToast(`${searchResults.value.length} offres récupérées et classées.`);
+            } else {
+              showToast('Erreur lors de la recherche');
+            }
+          } catch(e) {
+            showToast('Erreur de connexion');
+          } finally {
+            searching.value = false;
+            refreshIcons();
+          }
+        }
+
+        // Apply Single Offer
+        async function applySingleOffer(job, autoSend) {
+          showToast(`Lancement de la candidature pour ${job.title}…`);
+          try {
+            const res = await fetch('/api/apply/single', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                source: job.source || 'france_travail',
+                external_id: job.external_id,
+                auto_send: autoSend,
+                tone: jobModalTone.value || 'modern'
+              })
+            });
+            const data = await res.json();
+            if (data.ok) {
+              showToast('Candidature préparée avec succès !');
+              fetchStats();
+              fetchApplications();
+            }
+          } catch(e) {
+            showToast('Erreur lors de l\'envoi');
+          }
+        }
+
+        // Generate Letter for Modal (Feature 3)
+        async function generateLetterForModal(job) {
+          if (!job) return;
+          generatingLetter.value = true;
+          showToast(`Rédaction de la lettre personnalisée (${jobModalTone.value})…`);
+          try {
+            const res = await fetch('/api/letter/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                source: job.source || 'france_travail',
+                external_id: job.external_id,
+                tone: jobModalTone.value
+              })
+            });
+            const data = await res.json();
+            if (data.ok && data.preparation) {
+              modalLetterContent.value = data.preparation.letter;
+              job.application_letter = data.preparation.letter;
+              showToast('✓ Lettre rédigée sur-mesure !');
+              fetchApplications();
+            } else {
+              showToast('Erreur lors de la génération');
+            }
+          } catch (e) {
+            showToast('Erreur réseau');
+          } finally {
+            generatingLetter.value = false;
+            refreshIcons();
+          }
+        }
+
+        function copyText(text) {
+          if (!text) return;
+          navigator.clipboard.writeText(text).then(() => {
+            showToast('✓ Texte copié dans le presse-papier !');
+          }).catch(() => {
+            showToast('Impossible de copier');
+          });
+        }
+
+        // Profile
+        async function fetchProfile() {
+          try {
+            const res = await fetch('/api/profile');
+            if (res.ok) {
+              profileData.value = await res.json();
+            }
+          } catch(e) {}
+        }
+
+        async function saveProfile() {
+          try {
+            const res = await fetch('/api/profile', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(profileData.value)
+            });
+            if (res.ok) {
+              showToast('Profil enregistré avec succès !');
+              fetchStatus();
+            }
+          } catch(e) {
+            showToast('Erreur lors de la sauvegarde');
+          }
+        }
+
+        function openLetterModal(app) {
+          selectedLetterApp.value = app;
+          refreshIcons();
+        }
+
+        function openJobModal(job) {
+          selectedJobModal.value = job;
+          modalLetterContent.value = job.application_letter || job.application_message || '';
+          modalRecruiterEmail.value = job.contact_email || (job.contact_emails && job.contact_emails[0]) || '';
+          modalLeadOutreach.value = null;
+          leadTargetRole.value = 'tech_lead';
+          refreshIcons();
+        }
+
+        async function huntLeadsForModal(job) {
+          if (!job) return;
+          huntingLeads.value = true;
+          try {
+            const res = await fetch('/api/leads/hunt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                company: job.company || 'Entreprise',
+                title: job.title || 'Data Scientist',
+                description: job.description || ''
+              })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              modalLeadOutreach.value = data.outreach;
+              showToast('✓ Décideurs et messages personnalisés générés !');
+            } else {
+              showToast('Erreur lors de la détection des décideurs');
+            }
+          } catch(e) {
+            showToast('Erreur de connexion');
+          } finally {
+            huntingLeads.value = false;
+            refreshIcons();
+          }
+        }
+
+        async function dispatchGmail(job, action = 'draft') {
+          if (!modalRecruiterEmail.value) {
+            showToast("Veuillez renseigner l'adresse email du recruteur.");
+            return;
+          }
+          if (!modalLetterContent.value) {
+            showToast("Veuillez d'abord générer la lettre de motivation.");
+            return;
+          }
+          sendingGmail.value = true;
+          try {
+            const res = await fetch('/api/gmail/dispatch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                external_id: job.external_id,
+                source: job.source || 'france_travail',
+                recipient_email: modalRecruiterEmail.value,
+                subject: `Candidature – ${job.title || 'Data Scientist'} – Serigne Bassirou NDIAYE`,
+                body: modalLetterContent.value,
+                action: action,
+              })
+            });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+              showToast(data.message || (action === 'draft' ? '✓ Brouillon créé dans Gmail !' : '✓ Email envoyé !'));
+              await fetchApplications();
+              await fetchStats();
+            } else {
+              showToast(data.detail || 'Erreur lors de la création du brouillon Gmail.');
+            }
+          } catch(e) {
+            showToast('Erreur de connexion au service Gmail.');
+          } finally {
+            sendingGmail.value = false;
+          }
+        }
+
+        async function testGmailConnection() {
+          testingGmail.value = true;
+          try {
+            const res = await fetch('/api/gmail/test', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+              showToast('✓ ' + data.message);
+              await fetchStatus();
+            } else {
+              showToast(data.detail || 'Erreur lors du test Gmail.');
+            }
+          } catch(e) {
+            showToast('Erreur de connexion au serveur.');
+          } finally {
+            testingGmail.value = false;
+          }
+        }
+
+        async function testConnection() {
+          showToast('Vérification de la connexion France Travail…');
+          await fetchStatus();
+          if (status.value.ft_configured) {
+            showToast('✓ Connexion France Travail active et opérationnelle !');
+          } else {
+            showToast('France Travail non configuré ou hors-ligne');
+          }
+        }
+
+        function exportCSV() {
+          if (!applications.value || applications.value.length === 0) {
+            showToast('Aucune candidature à exporter');
+            return;
+          }
+          const headers = ['Poste', 'Entreprise', 'Ville', 'Canal', 'Statut', 'Date', 'Notes'];
+          const rows = applications.value.map(a => [
+            `"${(a.title || '').replace(/"/g, '""')}"`,
+            `"${(a.company || '').replace(/"/g, '""')}"`,
+            `"${(a.location || '').replace(/"/g, '""')}"`,
+            `"${(a.source || '').replace(/"/g, '""')}"`,
+            `"${(a.application_status || '').replace(/"/g, '""')}"`,
+            `"${(a.application_sent_at || a.status_updated_at || a.first_seen_at || '').replace(/"/g, '""')}"`,
+            `"${(a.personal_notes || '').replace(/"/g, '""')}"`
+          ]);
+          const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement('a');
+          link.setAttribute('href', encodedUri);
+          link.setAttribute('download', `candidatures_jobhunter_${new Date().toISOString().slice(0, 10)}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          showToast('✓ Export CSV téléchargé avec succès !');
+        }
+
+        watch([activeTab, selectedJobModal, selectedLetterApp, modalLeadOutreach, leadTargetRole], () => {
+          refreshIcons();
+        });
+
+        onMounted(async () => {
+          await fetchStatus();
+          await fetchStats();
+          await fetchApplications();
+          await fetchProfile();
+          refreshIcons();
+        });
+
+        return {
+          activeTab,
+          status,
+          stats,
+          searchForm,
+          searching,
+          searchResults,
+          selectedJobModal,
+          jobModalTone,
+          generatingLetter,
+          modalLetterContent,
+          modalRecruiterEmail,
+          sendingGmail,
+          testingGmail,
+          dispatchGmail,
+          testGmailConnection,
+          trackingFilter,
+          trackingSearch,
+          applications,
+          selectedLetterApp,
+          profileData,
+          toast,
+          formatDate,
+          runSearch,
+          applySingleOffer,
+          updateStatus,
+          saveProfile,
+          openLetterModal,
+          openJobModal,
+          huntingLeads,
+          modalLeadOutreach,
+          leadTargetRole,
+          huntLeadsForModal,
+          generateLetterForModal,
+          copyText,
+          testConnection,
+          exportCSV,
+          fetchApplications,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
