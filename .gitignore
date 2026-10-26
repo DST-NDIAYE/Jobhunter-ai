@@ -17,3 +17,6 @@ browser_sessions/
 client_secret*.json
 credentials*.json
 token*.json
+cv_master.yaml
+output/
+kits/
