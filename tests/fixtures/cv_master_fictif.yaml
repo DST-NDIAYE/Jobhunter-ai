@@ -91,6 +91,7 @@ certifications:
   - organisme: "Organisme Fictif"
     nombre: 2
     annee: "2024"
+    domaines: [Machine Learning]
     intitules: ["Certification Fictive A", "Certification Fictive B"]
 
 competences:
