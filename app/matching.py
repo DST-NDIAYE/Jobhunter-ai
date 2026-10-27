@@ -1,58 +1,25 @@
-"""Lecture locale du CV et similarité lexicale simple, sans service externe."""
+"""Similarité lexicale simple entre le CV maître et une offre, sans service externe."""
 
 from pathlib import Path
-import re
 
-import pymupdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-
-class CVError(Exception):
-    """Le CV ne peut pas être lu ou ne contient pas de texte exploitable."""
+from app.cv_tailor import MASTER_PATH, NOTIONS_CATEGORY, CVTailorError, load_master, master_text
 
 
-def _clean_text(text: str) -> str:
-    """Nettoie les espaces en conservant les lignes et les paragraphes."""
-    lines = [re.sub(r"[^\S\n]+", " ", line).strip() for line in text.splitlines()]
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+def cv_text_from_master(master_path: Path = MASTER_PATH) -> str:
+    """Tout le texte du CV maître (accroche par défaut, puces, compétences, notions, formations).
 
-
-def extract_cv_text(path: str | Path) -> str:
-    """Extrait le texte d'un PDF local. Les PDF scannés nécessitent un OCR externe."""
-    cv_path = Path(path).expanduser()
+    Renvoie une chaîne vide si le master est absent ou invalide : les offres sont alors listées sans score.
+    """
     try:
-        if not cv_path.is_file():
-            raise CVError(
-                "Le CV PDF est introuvable. Vérifiez le fichier et le chemin configuré."
-            )
-        with pymupdf.open(cv_path) as document:
-            if not document.is_pdf:
-                raise CVError("Le fichier du CV doit être un PDF valide.")
-            if document.needs_pass:
-                raise CVError(
-                    "Le CV PDF est protégé par un mot de passe. "
-                    "Utilisez une copie non protégée."
-                )
-            paragraphs = []
-            for page in document:
-                # Les blocs de type 0 contiennent du texte, les autres des images.
-                for block in page.get_text("blocks", sort=True):
-                    if block[6] == 0:
-                        paragraphs.append(block[4])
-            text = _clean_text("\n\n".join(paragraphs))
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise CVError(
-            "Impossible de lire le CV PDF. Vérifiez les droits de lecture "
-            "et que le fichier est un PDF valide."
-        ) from exc
-
-    if not text:
-        raise CVError(
-            "Le CV PDF ne contient aucun texte extractible. Il est peut-être "
-            "vide ou scanné ; l'OCR n'est pas inclus dans cette V1."
-        )
-    return text
+        master = load_master(master_path)
+    except CVTailorError:
+        return ""
+    accroche = " ".join(" ".join(text.split()) for text in master["accroches"].values())
+    notions = " ".join(s["nom"] for s in master["competences"].get(NOTIONS_CATEGORY) or [])
+    return f"{master_text(master, accroche)}\n{notions}"
 
 
 def calculate_match_score(cv_text: str, job_description: str | None) -> float:

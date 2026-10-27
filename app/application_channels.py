@@ -1,7 +1,36 @@
 """Détection pure, sans réseau ni adresse inventée."""
 
+import re
 from urllib.parse import urlsplit, unquote
-from app.email.message_builder import validate_email
+
+
+def validate_email(value):
+    value = (value or "").strip()
+    if len(value) > 254 or not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}", value):
+        raise ValueError("Adresse email invalide.")
+    local, domain = value.rsplit("@", 1)
+    if len(local) > 64 or local.startswith(".") or local.endswith(".") or ".." in value or any(
+        label.startswith("-") or label.endswith("-") for label in domain.split(".")
+    ):
+        raise ValueError("Adresse email invalide.")
+    return value
+
+
+def extract_contact_emails(text: str) -> list[str]:
+    """Extrait les adresses email valides d'un texte d'annonce."""
+    if not text:
+        return []
+    excluded_domains = ("example.com", "exemple.fr", "francetravail.fr", "pole-emploi.fr")
+    results = []
+    for match in re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", text):
+        match = match.strip(".,;:()<>[]\"' ")
+        try:
+            value = validate_email(match)
+        except ValueError:
+            continue
+        if not any(ex in value.split("@")[-1].lower() for ex in excluded_domains) and value not in results:
+            results.append(value)
+    return results
 
 ATS_HOSTS = ("myworkdayjobs.com", "greenhouse.io", "lever.co", "smartrecruiters.com",
              "teamtailor.com", "recruitee.com", "workable.com", "icims.com", "successfactors.com")

@@ -1,4 +1,4 @@
-"""Entreprises spontanées séparées des offres ; interface de préparation commune."""
+"""Historique des entreprises La Bonne Boîte (lecture seule : plus aucune écriture)."""
 
 from contextlib import closing
 import json
@@ -31,39 +31,6 @@ def decode_opportunity(row):
         ),
     )
     return item
-
-
-def upsert_opportunity(item, db_path):
-    with closing(sqlite3.connect(db_path)) as db, db:
-        db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT keywords FROM opportunities WHERE source=? AND external_id=?",
-                         (item["source"], item["external_id"])).fetchone()
-        keywords = list(dict.fromkeys((json.loads(row[0]) if row else []) + (item.get("keywords") or [])))
-        fields = (
-            "source", "external_id", "siret", "company_name", "sector", "naf", "rome", "job_keyword",
-            "location", "website", "source_url", "application_url", "hiring_potential",
-        )
-        db.execute(f"""INSERT INTO opportunities ({','.join(fields)},keywords) VALUES ({','.join('?' for _ in fields)},?)
-            ON CONFLICT(source,external_id) DO UPDATE SET
-            last_seen_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-            keywords=excluded.keywords,
-            rome=COALESCE(excluded.rome, opportunities.rome),
-            job_keyword=COALESCE(excluded.job_keyword, opportunities.job_keyword),
-            website=COALESCE(excluded.website, opportunities.website),
-            source_url=COALESCE(excluded.source_url, opportunities.source_url),
-            application_url=COALESCE(excluded.application_url, opportunities.application_url),
-            hiring_potential=COALESCE(excluded.hiring_potential, opportunities.hiring_potential)""",
-                   (*[item.get(f) for f in fields], json.dumps(keywords, ensure_ascii=False)))
-
-        from app.application_channels import detect_application_channel
-        check_fields = ("application_url", "website", "contact_email", "contact_email_manual", "source_url")
-        row = db.execute(
-            "SELECT " + ",".join(check_fields) + " FROM opportunities WHERE source=? AND external_id=?",
-            (item["source"], item["external_id"]),
-        ).fetchone()
-        channel = detect_application_channel(dict(zip(check_fields, row)))["channel"]
-        db.execute("UPDATE opportunities SET application_channel=? WHERE source=? AND external_id=?",
-                   (channel, item["source"], item["external_id"]))
 
 
 def list_opportunities(db_path):

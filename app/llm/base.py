@@ -3,39 +3,7 @@
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-
-
-class GenerationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    fit_summary: str
-    matching_skills: list[str]
-    relevant_cv_points: list[str]
-    missing_skills: list[str]
-    short_message: str
-    cover_letter: str
-
-    @field_validator("fit_summary", "short_message", "cover_letter")
-    @classmethod
-    def bounded_text(cls, value):
-        value = value.strip()
-        if not value or len(value) > 12000:
-            raise ValueError("Texte absent ou trop long.")
-        return value
-
-    @field_validator("matching_skills", "relevant_cv_points", "missing_skills")
-    @classmethod
-    def bounded_list(cls, value):
-        if len(value) > 100 or any(not s.strip() or len(s) > 2000 for s in value):
-            raise ValueError("Liste invalide.")
-        return [s.strip() for s in value]
-
-    @model_validator(mode="after")
-    def concise_texts(self):
-        if len(self.cover_letter.split()) > 350 or len(self.short_message.split()) > 180:
-            raise ValueError("Rédaction trop longue.")
-        return self
+from pydantic import BaseModel
 
 
 class ProviderError(Exception):
@@ -64,13 +32,12 @@ def is_quota(exc: Exception) -> bool:
 
 class Provider(Protocol):
     def generate(self, *, messages: list[dict], model: str, api_key: str,
-                 timeout: float, schema: type[BaseModel] = GenerationResult) -> BaseModel: ...
+                 timeout: float, schema: type[BaseModel]) -> BaseModel: ...
 
 
 def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False,
-                    schema: type[BaseModel] = GenerationResult):
-    # Le schéma par défaut reste celui de la candidature ; d'autres modules passent le leur.
-    name = "application_preparation" if schema is GenerationResult else schema.__name__.lower()
+                    schema: type[BaseModel]):
+    name = schema.__name__.lower()
     payload = {
         "model": model, "messages": messages,
         "response_format": {"type": "json_schema", "json_schema": {

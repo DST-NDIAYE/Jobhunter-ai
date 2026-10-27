@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import httpx
+from pydantic import BaseModel
 
 from app import llm
 from app.config import Settings
@@ -83,14 +84,18 @@ def respond(status):
     return post
 
 
+class Reponse(BaseModel):
+    statut: str
+
+
 class StatusClassificationTests(unittest.TestCase):
     def call_chat(self):
         chat_completion("https://exemple.invalid/v1/chat/completions", messages=[], model="m",
-                        api_key="cle-test", timeout=5)
+                        api_key="cle-test", timeout=5, schema=Reponse)
 
     def call_gemini(self):
         GeminiProvider().generate(messages=[{"role": "user", "content": "x"}], model="gemini-test",
-                                  api_key="cle-test", timeout=5)
+                                  api_key="cle-test", timeout=5, schema=Reponse)
 
     def test_503_is_retryable(self):
         with patch("httpx.Client.post", respond(503)):

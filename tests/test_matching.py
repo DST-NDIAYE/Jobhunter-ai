@@ -1,84 +1,30 @@
-"""Tests locaux : aucun vrai CV, identifiant ou appel réseau n'est nécessaire."""
+"""Tests locaux : CV maître fictif, aucun identifiant ni appel réseau."""
 
 from pathlib import Path
-import tempfile
 import unittest
-from unittest.mock import patch
 
-import pymupdf
+from app.matching import calculate_match_score, cv_text_from_master
 
-from app.matching import CVError, calculate_match_score, extract_cv_text
+FIXTURE = Path(__file__).parent / "fixtures" / "cv_master_fictif.yaml"
 
 
-class ExtractCVTextTests(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.path = Path(self.temp_dir.name) / "cv.pdf"
+class MasterTextTests(unittest.TestCase):
+    def test_text_comes_from_the_master_without_markup_or_contacts(self):
+        text = cv_text_from_master(FIXTURE)
+        for expected in ("Entraînement de modèles de classification.", "LangChain", "Docker", "AWS",
+                         "Master fictif de Science des Données", "Data Scientist junior orientée Machine Learning."):
+            self.assertIn(expected, text)
+        for absent in ("**", "camille.exemple@example.com", "06 00 11 22 33", "Camille"):
+            self.assertNotIn(absent, text)
 
-    def write_pdf(self, text="", encrypted=False):
-        with pymupdf.open() as document:
-            page = document.new_page()
-            if text:
-                page.insert_text((72, 72), text)
-            options = {}
-            if encrypted:
-                options = {
-                    "encryption": pymupdf.PDF_ENCRYPT_AES_256,
-                    "owner_pw": "test-owner",
-                    "user_pw": "test-reader",
-                }
-            document.save(self.path, **options)
+    def test_missing_master_gives_no_text(self):
+        self.assertEqual(cv_text_from_master(Path("/chemin/inexistant/cv_master.yaml")), "")
 
-    def test_extracts_and_cleans_multiple_pages_and_paragraphs(self):
-        with pymupdf.open() as document:
-            page = document.new_page()
-            page.insert_text((72, 72), "  Data   Scientist  ")
-            page.insert_text((72, 150), "Python    SQL")
-            document.new_page().insert_text((72, 72), "Machine Learning")
-            document.save(self.path)
-
-        text = extract_cv_text(self.path)
-
-        self.assertEqual(text, "Data Scientist\n\nPython SQL\n\nMachine Learning")
-        self.assertEqual(extract_cv_text(str(self.path)), text)
-
-    def test_missing_file_has_actionable_error(self):
-        with self.assertRaisesRegex(CVError, "introuvable"):
-            extract_cv_text(self.path)
-
-    def test_invalid_and_zero_byte_pdf_have_actionable_error(self):
-        for content in (b"", b"Ce fichier ne contient pas de PDF."):
-            with self.subTest(content=content):
-                self.path.write_bytes(content)
-                with self.assertRaisesRegex(CVError, "PDF valide"):
-                    extract_cv_text(self.path)
-
-    def test_unreadable_pdf_has_actionable_error(self):
-        self.write_pdf("Python")
-        with patch("app.matching.pymupdf.open", side_effect=PermissionError):
-            with self.assertRaisesRegex(CVError, "droits de lecture"):
-                extract_cv_text(self.path)
-
-    def test_password_protected_pdf_has_actionable_error(self):
-        self.write_pdf("Python", encrypted=True)
-        with self.assertRaisesRegex(CVError, "mot de passe"):
-            extract_cv_text(self.path)
-
-    def test_empty_pdf_reports_ocr_limitation(self):
-        self.write_pdf()
-        with self.assertRaisesRegex(CVError, "aucun texte extractible.*OCR"):
-            extract_cv_text(self.path)
-
-    def test_image_only_pdf_reports_ocr_limitation(self):
-        with pymupdf.open() as document:
-            page = document.new_page()
-            pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 10, 10), False)
-            pixmap.clear_with(255)
-            page.insert_image(pymupdf.Rect(72, 72, 172, 172), pixmap=pixmap)
-            document.save(self.path)
-        with self.assertRaisesRegex(CVError, "aucun texte extractible.*OCR"):
-            extract_cv_text(self.path)
+    def test_master_text_scores_a_related_offer_higher(self):
+        text = cv_text_from_master(FIXTURE)
+        related = calculate_match_score(text, "Data Scientist Python Scikit-learn classification LangChain FAISS")
+        unrelated = calculate_match_score(text, "Boulanger pâtissier viennoiseries")
+        self.assertGreater(related, unrelated)
 
 
 class MatchScoreTests(unittest.TestCase):

@@ -1,22 +1,24 @@
-"""Routes API REST pour le front-end moderne JobHunter AI."""
+"""Routes REST de JobHunter AI : état, recherche France Travail, suivi des candidatures.
+
+Aucune route n'envoie de candidature ni d'e-mail, et aucune ne renvoie de coordonnées ni de secret.
+"""
 
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import sqlite3
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.application_channels import extract_contact_emails
+from app.applications import APPLICATION_STATUSES, get_offer, update_status
 from app.config import get_settings
-from app.candidate_profile import load_profile, save_profile
-from app.database import get_jobs, add_job
-from app.applications import get_applications, update_status, get_offer, APPLICATION_STATUSES
+from app.cv_tailor import MASTER_PATH, CVTailorError, load_master
+from app.database import add_job, get_jobs
+from app.france_travail import search_jobs
+from app.llm import resolve_provider
+from app.matching import calculate_match_score, cv_text_from_master
 from app.opportunities import list_opportunities
-from app.application_router import recent_events
-from app.ft_automation import send_single_france_travail_offer
-from app.lbb_automation import send_single_lbb_opportunity
-from app.matching import extract_cv_text, calculate_match_score
-from app.france_travail import search_jobs, FranceTravailError
 
 api_router = APIRouter(prefix="/api")
 
@@ -26,68 +28,30 @@ class StatusUpdateRequest(BaseModel):
     personal_notes: str | None = None
 
 
-class ProfileUpdateRequest(BaseModel):
-    candidate: dict[str, Any]
-    target_criteria: dict[str, Any] | None = None
-    lbb_settings: dict[str, Any] | None = None
-
-
-class AutopilotRequest(BaseModel):
-    target: str = "france_travail"  # "france_travail" ou "lbb"
-    max_applications: int = 5
-    auto_send: bool = False  # False = mode vérification
-    tone: str = "modern"  # "modern", "classic", "impact"
-
-
-class SingleApplyRequest(BaseModel):
-    source: str
-    external_id: str
-    auto_send: bool = False
-    tone: str = "modern"
-
-
-class GenerateLetterRequest(BaseModel):
-    source: str
-    external_id: str
-    tone: str = "modern"  # "modern", "classic", "impact"
-    mode: str = "auto"
-    instructions: str = ""
-
-
-class LeadHuntRequest(BaseModel):
-    company: str
-    title: str = "Data Scientist"
-    description: str = ""
+def _master_status() -> dict[str, Any]:
+    try:
+        load_master(MASTER_PATH)
+        return {"master_ready": True, "master_error": None}
+    except CVTailorError as exc:
+        return {"master_ready": False, "master_error": str(exc)}
 
 
 @api_router.get("/status")
 def get_system_status():
+    """État des services, sans aucune coordonnée ni secret."""
     settings = get_settings()
-    cv_exists = Path(settings.cv_path).is_file()
-    ft_configured = bool(settings.france_travail_client_id and settings.france_travail_client_secret)
-    cand = load_profile()
-    llm_provider = settings.llm_provider or "local"
-    llm_configured = bool(settings.llm_api_key and llm_provider.lower() not in ("", "local"))
-    llm_model = settings.llm_model or ""
-
-    from app.email.draft_service import get_gmail_status
-    gmail_info = get_gmail_status(settings)
-
+    provider, model = resolve_provider(settings, "auto")
+    letter_model = settings.letter_model or settings.llm_model
     return {
         "ok": True,
-        "cv_ready": cv_exists,
-        "cv_path": str(settings.cv_path),
-        "cv_name": Path(settings.cv_path).name if cv_exists else None,
-        "ft_configured": ft_configured,
-        "llm_provider": llm_provider,
-        "llm_configured": llm_configured,
-        "llm_model": llm_model,
-        "gmail_configured": gmail_info["configured"],
-        "gmail_user": gmail_info["user"],
-        "gmail_method": gmail_info["method"],
-        "candidate_name": f"{cand.get('first_name', '')} {cand.get('last_name', '')}".strip() or "Candidat",
-        "candidate_email": cand.get("email", ""),
-        "candidate_phone": cand.get("phone", ""),
+        **_master_status(),
+        "ft_configured": bool(settings.france_travail_client_id and settings.france_travail_client_secret),
+        "llm_provider": provider or "local",
+        "llm_configured": bool(provider),
+        "llm_model": model,
+        "llm_fallback_model": settings.llm_fallback_model,
+        "letter_model": letter_model if provider else "",
+        "gmail_configured": bool(settings.gmail_app_password or settings.gmail_token_file.is_file()),
     }
 
 
@@ -228,265 +192,27 @@ def update_application_status_and_notes(
     return {"ok": True, "item": updated}
 
 
-@api_router.get("/events")
-def get_timeline_events(limit: int = 50):
-    settings = get_settings()
-    events = recent_events(settings.database_path, limit=limit)
-    return events
-
-
 @api_router.get("/jobs/search")
-def search_offers(
-    keyword: str = "Data Scientist",
-    location: str | None = None,
-    contract: str | None = None,
-    source: str = "all",
-    remote: str = "all",
-    limit: int = 20,
-):
+def search_offers(keyword: str = "Data Scientist", location: str | None = None, contract: str | None = None,
+                  limit: int = 20):
+    """Offres France Travail enregistrées en base et classées par score de correspondance avec le CV maître."""
     settings = get_settings()
-    all_raw_jobs = []
-
-    # 1. France Travail (si sélectionné)
-    if source in ("all", "france_travail"):
-        try:
-            ft_jobs = search_jobs(
-                keyword=keyword,
-                location=location,
-                contract_type=contract if contract != "Tous" else None,
-                limit=limit,
-            )
-            all_raw_jobs.extend(ft_jobs)
-        except Exception as exc:
-            if source == "france_travail":
-                raise HTTPException(status_code=502, detail=f"Erreur France Travail : {str(exc)}")
-
-    # Calcul du match score
-    scored_jobs = []
-    cv_text = ""
-    try:
-        if Path(settings.cv_path).is_file():
-            cv_text = extract_cv_text(settings.cv_path)
-    except Exception:
-        pass
-
-    from app.email.message_builder import extract_contact_emails
-
-    for job in all_raw_jobs:
+    jobs = search_jobs(keyword=keyword, location=location or None,
+                       contract_type=contract if contract and contract != "Tous" else None, limit=limit)
+    cv_text = cv_text_from_master()
+    scored = []
+    for job in jobs:
         add_job(job, db_path=settings.database_path)
-        score = calculate_match_score(cv_text, job.get("description", "")) if cv_text else None
         emails = extract_contact_emails(f"{job.get('title', '')} {job.get('description', '')}")
-        contact_email = emails[0] if emails else (job.get("contact_email") or "")
-        scored_jobs.append({**job, "match_score": score, "contact_emails": emails, "contact_email": contact_email})
-
-    scored_jobs.sort(key=lambda x: (x.get("match_score") or 0), reverse=True)
-    return scored_jobs[:limit]
-
-
-@api_router.get("/profile")
-def get_candidate_profile():
-    return load_profile()
-
-
-@api_router.post("/profile")
-def update_candidate_profile(data: dict[str, Any]):
-    current = load_profile()
-    current.update(data)
-    save_profile(current)
-    return {"ok": True, "profile": current}
-
-
-@api_router.post("/autopilot/run")
-def trigger_autopilot(req: AutopilotRequest):
-    raise HTTPException(status_code=410, detail="Autopilot d'envoi désactivé.")
-    settings = get_settings()
-
-    try:
-        if req.target == "france_travail":
-            from app.ft_automation import run_daily_ft_autopilot
-            summary = run_daily_ft_autopilot(
-                settings,
-                max_applications=req.max_applications,
-                dry_run=not req.auto_send,
-                headless=False,
-                tone=req.tone,
-            )
-        else:
-            from app.lbb_automation import run_daily_autopilot
-            summary = run_daily_autopilot(
-                settings,
-                max_applications=req.max_applications,
-                dry_run=not req.auto_send,
-                headless=False,
-                tone=req.tone,
-            )
-        return {"ok": True, "summary": summary}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@api_router.post("/apply/single")
-def apply_single(req: SingleApplyRequest):
-    settings = get_settings()
-
-    try:
-        if req.source == "france_travail":
-            from app.ft_automation import send_single_france_travail_offer
-            res = send_single_france_travail_offer(
-                req.external_id,
-                settings,
-                auto_send=req.auto_send,
-                dry_run=not req.auto_send,
-                headless=False,
-                tone=req.tone,
-            )
-        else:
-            from app.lbb_automation import send_single_lbb_opportunity
-            res = send_single_lbb_opportunity(
-                req.external_id,
-                settings,
-                auto_send=req.auto_send,
-                headless=False,
-                tone=req.tone,
-            )
-        return {"ok": True, "result": res}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@api_router.post("/letter/generate")
-def generate_custom_letter(req: GenerateLetterRequest):
-    settings = get_settings()
-    job = get_offer(req.external_id, source=req.source, db_path=settings.database_path)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Offre {req.external_id} introuvable.")
-
-    from app.application_generator import generate_preparation
-    from app.applications import save_preparation
-
-    draft = generate_preparation(
-        job,
-        settings,
-        mode=req.mode,
-        instructions=req.instructions,
-        tone=req.tone,
-    )
-    save_preparation(
-        req.external_id,
-        draft["message"],
-        draft["letter"],
-        req.source,
-        settings.database_path,
-        generated=draft,
-        ready=True,
-    )
-    return {"ok": True, "preparation": draft}
-
-
-@api_router.get("/scheduler")
-def get_scheduler():
-    from app.scheduler import load_scheduler_config
-    return load_scheduler_config()
-
-
-@api_router.post("/scheduler")
-def update_scheduler(data: dict[str, Any]):
-    from app.scheduler import save_scheduler_config
-    return save_scheduler_config(data)
-
-
-@api_router.post("/scheduler/trigger")
-async def trigger_scheduler_now():
-    from app.scheduler import execute_scheduled_autopilot
-    res = await execute_scheduled_autopilot()
-    return {"ok": True, "result": res}
-
-
-class GmailDispatchRequest(BaseModel):
-    external_id: str
-    source: str = "france_travail"
-    recipient_email: str
-    subject: str | None = None
-    body: str | None = None
-    action: str = "draft"  # "draft" ou "send"
+        scored.append({**job, "match_score": calculate_match_score(cv_text, job.get("description", "")) if cv_text else None,
+                       "contact_emails": emails, "contact_email": emails[0] if emails else (job.get("contact_email") or "")})
+    scored.sort(key=lambda x: x.get("match_score") or 0, reverse=True)
+    return scored[:limit]
 
 
 @api_router.get("/gmail/status")
-def get_gmail_status_route():
-    from app.email.draft_service import get_gmail_status
-    return get_gmail_status(get_settings())
-
-
-@api_router.post("/gmail/dispatch")
-def dispatch_gmail_route(req: GmailDispatchRequest):
+def get_gmail_status():
+    """Gmail configuré ou non (aucun envoi ni brouillon n'est possible depuis l'application)."""
     settings = get_settings()
-    from app.email.draft_service import dispatch_gmail_application
-    from app.applications import get_offer
-    from app.email.message_builder import default_subject
-
-    job = get_offer(req.external_id, req.source, settings.database_path)
-    if not job:
-        # Si non trouvé dans SQLite, fabriquer un job minimal
-        job = {"external_id": req.external_id, "source": req.source, "title": "Offre d'emploi"}
-
-    subject = (req.subject or "").strip() or job.get("email_subject") or default_subject(job)
-    body = (req.body or "").strip() or job.get("application_letter") or job.get("application_message")
-    if not body:
-        raise HTTPException(
-            status_code=400,
-            detail="Le contenu du message de candidature est vide. Cliquez d'abord sur « Générer » pour préparer votre lettre.",
-        )
-
-    try:
-        res = dispatch_gmail_application(
-            external_id=req.external_id,
-            source=req.source,
-            recipient=req.recipient_email,
-            subject=subject,
-            body=body,
-            settings=settings,
-            action=req.action,
-        )
-        return res
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@api_router.post("/gmail/test")
-def test_gmail_route():
-    settings = get_settings()
-    from app.email.draft_service import get_gmail_status
-    st = get_gmail_status(settings)
-    if not st["configured"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Gmail non configuré. Renseignez GMAIL_APP_PASSWORD dans .env (ou configurez Google OAuth).",
-        )
-    if settings.gmail_app_password:
-        from app.email.app_password_client import AppPasswordGmail
-        client = AppPasswordGmail(st["user"], settings.gmail_app_password, timeout=10)
-        user = client.test_connection()
-        return {"ok": True, "message": f"Connexion SMTP réussie pour {user} !"}
-    elif settings.gmail_token_file.is_file():
-        from app.email.gmail_client import GmailClient
-        client = GmailClient(settings)
-        user = client.connected_email()
-        return {"ok": True, "message": f"Connexion OAuth réussie pour {user} !"}
-    raise HTTPException(status_code=400, detail="Mode Gmail non reconnu.")
-
-
-@api_router.post("/leads/hunt")
-def hunt_decision_makers_and_recruiters(req: LeadHuntRequest):
-    """Génère des requêtes et liens ciblés LinkedIn / X-Ray ainsi que des messages d'approche personnalisés."""
-    from app.lead_hunter import generate_lead_outreach
-    try:
-        outreach = generate_lead_outreach(
-            company=req.company,
-            title=req.title,
-            description=req.description,
-        )
-        return {"ok": True, "outreach": outreach}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erreur chasseur de décideurs : {str(exc)}")
-
-
+    return {"configured": bool(settings.gmail_app_password or settings.gmail_token_file.is_file()),
+            "method": "app_password" if settings.gmail_app_password else ("oauth" if settings.gmail_token_file.is_file() else None)}

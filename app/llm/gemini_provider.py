@@ -3,7 +3,7 @@ import re
 import httpx
 from pydantic import BaseModel
 
-from app.llm.base import (GenerationResult, ProviderError, QuotaProviderError, RetryableProviderError, is_quota,
+from app.llm.base import (ProviderError, QuotaProviderError, RetryableProviderError, is_quota,
                           is_retryable)
 
 
@@ -11,8 +11,10 @@ class GeminiProvider:
     """Fournisseur Google Gemini : supporte l'API native generateContent et le endpoint OpenAI de Google AI Studio."""
 
     def generate(self, *, messages: list[dict], model: str, api_key: str, timeout: float,
-                 schema: type[BaseModel] = GenerationResult) -> BaseModel:
-        clean_model = model.replace("gemini/", "").strip() or "gemini-1.5-flash"
+                 schema: type[BaseModel]) -> BaseModel:
+        clean_model = model.replace("gemini/", "").strip()
+        if not clean_model:
+            raise ProviderError("Aucun modèle Gemini configuré (LLM_MODEL).")
 
         # 1. Tentative via l'API native Google AI Studio (fiable, supportée sur toutes les clés)
         try:
@@ -45,7 +47,7 @@ class GeminiProvider:
             raise ProviderError("Service Gemini indisponible ou réponse invalide.") from None
 
     def _generate_native(self, *, messages: list[dict], model: str, api_key: str, timeout: float,
-                         schema: type[BaseModel] = GenerationResult) -> BaseModel:
+                         schema: type[BaseModel]) -> BaseModel:
         system_text = ""
         user_text = ""
         for m in messages:

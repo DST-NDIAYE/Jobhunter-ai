@@ -1,17 +1,18 @@
-"""API HTTP : recherche, sauvegarde et classement des offres."""
+"""Application FastAPI : API de JobHunter AI et interface web."""
 
 import sqlite3
 from contextlib import asynccontextmanager
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.config import get_settings
-from app.database import add_job, init_db
-from app.france_travail import FranceTravailError, search_jobs
-from app.matching import CVError, calculate_match_score, extract_cv_text
-from app.models import Job, MatchedJob
+from app.api import api_router
+from app.config import PROJECT_ROOT
+from app.database import init_db
+from app.france_travail import FranceTravailError
+
+FRONTEND = PROJECT_ROOT / "frontend"
 
 
 @asynccontextmanager
@@ -22,11 +23,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="JobHunter AI",
-    version="0.1.0",
+    version="0.2.0",
     description=(
-        "Recherche d'offres France Travail, sauvegarde SQLite sans doublons et "
-        "classement par similarité TF-IDF avec un CV local. "
-        "Aucune candidature n'est envoyée."
+        "Recherche d'offres France Travail classées selon le CV maître, CV et lettre adaptés à chaque offre, "
+        "suivi des candidatures. Aucune candidature ni aucun e-mail n'est envoyé automatiquement."
     ),
     lifespan=lifespan,
 )
@@ -37,11 +37,6 @@ async def france_travail_error_handler(request: Request, exc: FranceTravailError
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
-@app.exception_handler(CVError)
-async def cv_error_handler(request: Request, exc: CVError):
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
-
-
 @app.exception_handler(sqlite3.Error)
 async def database_error_handler(request: Request, exc: sqlite3.Error):
     return JSONResponse(
@@ -50,94 +45,19 @@ async def database_error_handler(request: Request, exc: sqlite3.Error):
     )
 
 
-def search_parameters(
-    keyword: Annotated[
-        str | None, Query(max_length=200, description="Métier ou mots-clés, ex. Data Scientist")
-    ] = None,
-    location: Annotated[
-        str | None,
-        Query(max_length=100, description="Nom exact de commune (Paris) ou code INSEE (75056), pas un code postal"),
-    ] = None,
-    contract_type: Annotated[
-        str | None, Query(max_length=100, description="Code de contrat France Travail, ex. CDI, CDD")
-    ] = None,
-    limit: Annotated[int, Query(ge=1, le=150, description="Nombre maximal d'offres à récupérer")] = 50,
-) -> dict:
-    return {
-        "keyword": keyword,
-        "location": location,
-        "contract_type": contract_type,
-        "limit": limit,
-    }
-
-
-def find_and_save_jobs(parameters: dict) -> list[dict]:
-    jobs = search_jobs(**parameters)
-    for job in jobs:
-        add_job(job)
-    return jobs
-
-
-from pathlib import Path
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-
-from app.api import api_router
-
 app.include_router(api_router)
-if Path("frontend").is_dir():
-    app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+if FRONTEND.is_dir():
+    app.mount("/frontend", StaticFiles(directory=FRONTEND), name="frontend")
 
 
-@app.get("/", tags=["État"], summary="Interface Web JobHunter AI ou état API")
+@app.get("/", tags=["Interface"], summary="Interface web, ou état de l'API pour un client non navigateur")
 def root(request: Request):
-    accept = request.headers.get("accept", "")
-    frontend_index = Path("frontend/index.html")
-    if "text/html" in accept and frontend_index.is_file():
-        return FileResponse(frontend_index)
-    return {"message": "JobHunter AI fonctionne", "version": "0.1.0", "docs": "/docs"}
+    index = FRONTEND / "index.html"
+    if "text/html" in request.headers.get("accept", "") and index.is_file():
+        return FileResponse(index)
+    return {"message": "JobHunter AI fonctionne", "version": app.version, "docs": "/docs"}
 
 
-@app.get("/app", tags=["Interface"], summary="Application Web")
+@app.get("/app", tags=["Interface"], summary="Interface web")
 def web_app():
-    return FileResponse("frontend/index.html")
-
-
-@app.get(
-    "/jobs",
-    response_model=list[Job],
-    tags=["Offres"],
-    summary="Rechercher et enregistrer des offres",
-    responses={
-        422: {"description": "Paramètres de recherche invalides"},
-        502: {"description": "Erreur du service externe"},
-        503: {"description": "Configuration manquante, quota ou stockage indisponible"},
-        504: {"description": "Délai d'attente du service externe dépassé"},
-    },
-)
-def jobs(parameters: Annotated[dict, Depends(search_parameters)]) -> list[dict]:
-    """Retourne au plus `limit` offres et les conserve en SQLite ; aucune offre donne `[]`."""
-    return find_and_save_jobs(parameters)
-
-
-@app.get(
-    "/jobs/match",
-    response_model=list[MatchedJob],
-    tags=["Offres"],
-    summary="Classer les offres selon le CV local",
-    responses={
-        422: {"description": "Paramètres invalides ou CV absent, illisible ou sans texte"},
-        502: {"description": "Erreur du service externe"},
-        503: {"description": "Configuration manquante, quota ou stockage indisponible"},
-        504: {"description": "Délai d'attente du service externe dépassé"},
-    },
-)
-def matched_jobs(parameters: Annotated[dict, Depends(search_parameters)]) -> list[dict]:
-    """Score lexical de 0 à 100, décroissant, parmi les offres récupérées uniquement."""
-    cv_text = extract_cv_text(get_settings().cv_path)
-    jobs = find_and_save_jobs(parameters)
-    scored_jobs = [
-        {**job, "match_score": calculate_match_score(cv_text, job.get("description"))}
-        for job in jobs
-    ]
-    return sorted(scored_jobs, key=lambda job: job["match_score"], reverse=True)
+    return FileResponse(FRONTEND / "index.html")
