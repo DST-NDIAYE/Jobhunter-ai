@@ -1,4 +1,4 @@
-"""Sélection de CV : LLM simulé, offre et CV maître fictifs, aucun appel réseau."""
+"""Adaptation du CV par l'ordre : LLM simulé, offre et CV maître fictifs, aucun appel réseau."""
 
 import json
 from pathlib import Path
@@ -14,15 +14,21 @@ FIXTURE = Path(__file__).parent / "fixtures" / "cv_master_fictif.yaml"
 # Offre inventée : entreprise, poste et contenu fictifs.
 OFFRE_FICTIVE = """Exemplia Analytics (entreprise fictive) recrute un Data Scientist en CDD de 12 mois.
 Missions : classification de documents, mise en production de modèles, veille R&D.
-Compétences requises : Python, Scikit-learn, TensorFlow, Kubernetes.
+Compétences requises : Python, Scikit-learn, TensorFlow, Kubernetes, conteneurisation, environnement cloud.
 Un plus : SQL, Git. Une connaissance du C++ est appréciée.
 Profil : 2 ans d'expérience minimum."""
+
+ALL_ITEMS = {"prj-fictif-classif": ["acc-classif-01", "acc-classif-02", "acc-classif-03", "acc-classif-04",
+                                    "acc-classif-05"],
+             "prj-fictif-rag": ["acc-rag-01", "acc-rag-02"],
+             "prj-fictif-dashboard": ["acc-dash-01", "acc-dash-02", "acc-dash-03"]}
 
 
 def analyse(**overrides):
     data = {
         "intitule": "Data Scientist", "entreprise": "Exemplia Analytics", "type_contrat": "CDD",
-        "competences_requises": ["Python", "Scikit-learn", "TensorFlow", "Kubernetes"],
+        "competences_requises": ["Python", "Scikit-learn", "TensorFlow", "Kubernetes", "conteneurisation",
+                                 "environnement cloud"],
         "competences_souhaitees": ["SQL", "Git"], "mots_cles": ["classification", "production"],
         "experience_min_annees": 2, "niveau_experience": "junior", "langue": "fr",
     }
@@ -33,10 +39,8 @@ def analyse(**overrides):
 def selection(**overrides):
     data = {
         "accroche": "ml",
-        "projets": [{"projet": "prj-fictif-classif", "accomplissements": ["acc-classif-02", "acc-classif-03"]},
-                    {"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-01"]}],
-        "competences": ["Python", "Scikit-learn", "Pandas"],
-        "competences_notions": ["TensorFlow", "SQL"],
+        "projets": [{"projet": "prj-fictif-rag", "accomplissements": ["acc-rag-02", "acc-rag-01"]},
+                    {"projet": "prj-fictif-classif", "accomplissements": ["acc-classif-02", "acc-classif-03"]}],
     }
     data.update(overrides)
     return data
@@ -62,116 +66,81 @@ class TailorTestCase(unittest.TestCase):
             return cv_tailor.tailor_cv(offer, master_path=FIXTURE, settings=Settings(llm_api_key="cle-test"))
 
 
-class SelectionTests(TailorTestCase):
-    def test_valid_selection_copies_master_text_and_adapts_objective(self):
+def project_items(result):
+    return {p["id"]: [a["id"] for a in p["accomplissements"]] for e in result["experiences"] for p in e["projets"]}
+
+
+class OrderTests(TailorTestCase):
+    def test_everything_in_the_master_is_kept(self):
         result = self.run_tailor()
-        self.assertEqual(result["accroche"]["texte"],
-                         "Data Scientist junior orientée Machine Learning. Je recherche un poste en CDD.")
-        first = result["experiences"][0]["projets"][0]
-        self.assertEqual([a["id"] for a in first["accomplissements"]], ["acc-classif-02", "acc-classif-03"])
-        self.assertEqual(first["accomplissements"][0]["texte"], "Entraînement de modèles de classification.")
-        self.assertEqual([c["nom"] for c in result["competences"]], ["Python", "Scikit-learn", "Pandas"])
-        self.assertEqual([c["nom"] for c in result["competences_notions"]], ["TensorFlow", "SQL"])
-        # Une expérience sans projet retenu reste dans le parcours.
-        self.assertEqual(len(result["experiences"]), 2)
-        # Priorité globale du LLM, indépendante de l'ordre chronologique des expériences.
-        self.assertEqual(result["ordre_accomplissements"], ["acc-classif-02", "acc-classif-03", "acc-dash-01"])
+        self.assertEqual({k: sorted(v) for k, v in project_items(result).items()}, ALL_ITEMS)
+        self.assertEqual(len(result["ordre_accomplissements"]), 10)
+        names = [n for group in result["competences"] for n in group["noms"]]
+        master = cv_tailor.load_master(FIXTURE)
+        self.assertEqual(sorted(names), sorted(cv_tailor._skills(master)))
+
+    def test_llm_order_is_applied_and_omissions_are_completed_in_master_order(self):
+        result = self.run_tailor()
+        items = project_items(result)
+        # Ordre du LLM d'abord, puis ce qu'il a oublié, dans l'ordre du master.
+        self.assertEqual(items["prj-fictif-classif"],
+                         ["acc-classif-02", "acc-classif-03", "acc-classif-01", "acc-classif-04", "acc-classif-05"])
+        self.assertEqual(items["prj-fictif-rag"], ["acc-rag-02", "acc-rag-01"])
+        # Projet absent de la réponse du LLM : ajouté, en dernier dans la priorité.
+        self.assertEqual(result["ordre_accomplissements"][:2], ["acc-rag-02", "acc-rag-01"])
+        self.assertEqual(result["ordre_accomplissements"][-3:], ["acc-dash-01", "acc-dash-02", "acc-dash-03"])
+
+    def test_experiences_stay_chronological_and_projects_follow_llm_rank(self):
+        result = self.run_tailor()
+        self.assertEqual([e["id"] for e in result["experiences"]], ["exp-fictive-ds", "exp-fictive-stage"])
+        self.assertEqual([p["id"] for p in result["experiences"][0]["projets"]], ["prj-fictif-rag", "prj-fictif-classif"])
+
+    def test_text_is_copied_from_master_with_bold_markup(self):
+        result = self.run_tailor()
+        texts = {a["id"]: a["texte"] for e in result["experiences"] for p in e["projets"] for a in p["accomplissements"]}
+        self.assertEqual(texts["acc-classif-02"], "Entraînement de **modèles de classification**.")
 
     def test_unknown_accomplishment_id_is_rejected(self):
-        chosen = selection(projets=[{"projet": "prj-fictif-classif",
-                                     "accomplissements": ["acc-classif-02", "acc-invente-99"]}])
+        chosen = selection(projets=[{"projet": "prj-fictif-classif", "accomplissements": ["acc-classif-02", "acc-invente-99"]}])
         with self.assertRaisesRegex(CVTailorError, "accomplissement inconnu « acc-invente-99 »"):
             self.run_tailor(chosen=chosen)
 
-    def test_accomplishment_from_another_project_is_rejected(self):
-        chosen = selection(projets=[{"projet": "prj-fictif-classif", "accomplissements": ["acc-rag-01"]}])
-        with self.assertRaisesRegex(CVTailorError, "n'appartient pas au projet"):
-            self.run_tailor(chosen=chosen)
-
-    def test_unknown_project_accroche_and_skill_are_rejected(self):
-        chosen = selection(accroche="invente", competences=["Python", "Kubernetes"],
-                           projets=[{"projet": "prj-invente", "accomplissements": ["acc-classif-01"]}])
+    def test_wrong_project_duplicates_and_unknown_ids_are_rejected(self):
+        chosen = selection(accroche="invente", projets=[
+            {"projet": "prj-fictif-classif", "accomplissements": ["acc-rag-01", "acc-classif-01", "acc-classif-01"]},
+            {"projet": "prj-invente", "accomplissements": []}])
         with self.assertRaises(CVTailorError) as ctx:
             self.run_tailor(chosen=chosen)
-        message = str(ctx.exception)
-        for expected in ("accroche inconnue", "projet inconnu « prj-invente »", "compétence inconnue « Kubernetes »"):
-            self.assertIn(expected, message)
+        for expected in ("accroche inconnue", "n'appartient pas au projet", "accomplissement en double",
+                         "projet inconnu « prj-invente »"):
+            self.assertIn(expected, str(ctx.exception))
 
-    def test_notions_skill_in_main_list_is_rejected(self):
-        with self.assertRaisesRegex(CVTailorError, "« TensorFlow » est de niveau notions"):
-            self.run_tailor(chosen=selection(competences=["Python", "TensorFlow"], competences_notions=[]))
-
-    def test_notions_skill_not_requested_by_offer_is_rejected(self):
-        with self.assertRaisesRegex(CVTailorError, "« R » \\(notions\\) n'est pas demandée"):
-            # L'offre parle de « R&D », pas du langage R.
-            self.run_tailor(chosen=selection(competences_notions=["R"]))
-        with self.assertRaisesRegex(CVTailorError, "« C » \\(notions\\) n'est pas demandée"):
-            # « C++ » n'est pas le langage C.
-            self.run_tailor(chosen=selection(competences_notions=["C"]))
-
-    def test_notions_variants_are_recognised_in_offer(self):
-        result = self.run_tailor(chosen=selection(competences_notions=["Git/GitHub"]))
-        self.assertEqual([c["nom"] for c in result["competences_notions"]], ["Git/GitHub"])
-
-    def test_one_page_budget_and_duplicates_are_enforced(self):
-        too_many = selection(projets=[{"projet": "prj-fictif-classif",
-                                       "accomplissements": ["acc-classif-01", "acc-classif-01"]}])
-        with self.assertRaisesRegex(CVTailorError, "accomplissement en double"):
-            self.run_tailor(chosen=too_many)
-        with patch("app.cv_tailor.MAX_ACCOMPLISSEMENTS", 2):
-            with self.assertRaisesRegex(CVTailorError, "plus de 2 accomplissements"):
-                self.run_tailor(chosen=selection())
-
-    def test_redundant_accomplishment_is_moved_last(self):
-        # Le LLM place la formation (redondante) en tête : le code la remet en dernier partout.
-        chosen = selection(projets=[{"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03", "acc-dash-01"]},
-                                    {"projet": "prj-fictif-classif", "accomplissements": ["acc-classif-02"]}])
-        result = self.run_tailor(chosen=chosen)
-        dashboard = result["experiences"][1]["projets"][0]
-        self.assertEqual([a["id"] for a in dashboard["accomplissements"]], ["acc-dash-01", "acc-dash-03"])
-        self.assertEqual(result["ordre_accomplissements"], ["acc-dash-01", "acc-classif-02", "acc-dash-03"])
-
-    def test_project_with_only_redundant_accomplishments_is_rejected(self):
-        chosen = selection(projets=[{"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03"]}])
-        with self.assertRaisesRegex(CVTailorError, "sans accomplissement réalisé"):
-            self.run_tailor(chosen=chosen)
-
-    def test_redundancy_is_sent_to_the_llm(self):
-        self.run_tailor()
-        system, user = self.provider.calls[1]
-        self.assertIn("redondant_avec", system["content"])
-        items = {a["id"]: a for p in json.loads(user["content"])["catalogue"]["projets"] for a in p["accomplissements"]}
-        self.assertEqual(items["acc-dash-03"]["redondant_avec"], "certifications")
-        self.assertNotIn("redondant_avec", items["acc-dash-01"])
-
-    def test_redundancy_must_point_to_an_existing_section(self):
-        master = cv_tailor.load_master(FIXTURE)
-        master["experiences"][1]["projets"][0]["accomplissements"][2]["redondant_avec"] = "inexistante"
-        with self.assertRaisesRegex(CVTailorError, "rubrique absente"):
-            cv_tailor.check_master(master)
-
-    def test_selection_priorities_use_required_and_desired_skills(self):
-        self.run_tailor(analysis=analyse(competences_souhaitees=["LangChain", "IA générative"]))
-        system, user = self.provider.calls[1]
-        for expected in ("competences_requises ET competences_souhaitees",
-                         "Un projet qui prouve une compétence souhaitée doit figurer dans la sélection"):
-            self.assertIn(expected, system["content"])
-        sent = json.loads(user["content"])["analyse_offre"]
-        self.assertEqual(sent["competences_souhaitees"], ["LangChain", "IA générative"])
-
-    def test_skills_cited_by_offer_are_computed_from_text(self):
-        result = self.run_tailor()
-        # « R&D » et « C++ » ne citent ni R ni C ; « Git » cite Git/GitHub.
-        self.assertEqual(sorted(result["competences_citees_par_offre"]),
-                         ["Git/GitHub", "Python", "SQL", "Scikit-learn", "TensorFlow"])
-
-    def test_one_page_limits(self):
-        self.assertEqual((cv_tailor.MAX_ACCOMPLISSEMENTS, cv_tailor.MAX_PAR_PROJET), (12, 5))
-
-    def test_llm_must_not_write_text(self):
-        # Un champ libre en plus est refusé par le schéma strict.
+    def test_llm_returns_only_an_order(self):
+        self.assertEqual(set(Selection.model_fields), {"accroche", "projets"})
         with self.assertRaises(ValueError):
             Selection.model_validate({**selection(), "texte_accroche": "Texte rédigé par le LLM"})
+
+    def test_redundant_accomplishment_is_moved_last(self):
+        chosen = selection(projets=[{"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03", "acc-dash-01"]}])
+        result = self.run_tailor(chosen=chosen)
+        self.assertEqual(project_items(result)["prj-fictif-dashboard"], ["acc-dash-01", "acc-dash-02", "acc-dash-03"])
+        self.assertEqual(result["ordre_accomplissements"][-1], "acc-dash-03")
+
+
+class SkillOrderTests(TailorTestCase):
+    def test_skills_cited_by_offer_come_first_then_level(self):
+        groups = {g["categorie"]: g["noms"] for g in self.run_tailor()["competences"]}
+        # Offre : Python, SQL ; « R&D » ne cite pas R et « C++ » ne cite pas C.
+        self.assertEqual(groups["langages"], ["Python", "SQL", "R", "C"])
+        self.assertEqual(groups["data_science"], ["Scikit-learn", "TensorFlow", "Pandas"])
+        self.assertEqual(groups["outils"], ["Git/GitHub"])
+        # Rubrique « Notions (Master) » toujours présente, même si l'offre ne cite rien.
+        self.assertEqual(groups["notions_master"], ["Docker", "AWS"])
+
+    def test_level_only_orders_when_offer_cites_nothing(self):
+        master = cv_tailor.load_master(FIXTURE)
+        groups = {g["categorie"]: g["noms"] for g in cv_tailor.order_skills(master, "")}
+        self.assertEqual(groups["ia_generative"], ["LangChain", "FAISS", "expressions régulières (Regex)"])
 
 
 class ObjectiveTests(TailorTestCase):
@@ -182,84 +151,81 @@ class ObjectiveTests(TailorTestCase):
         for contract, sentence in expected.items():
             with self.subTest(contract=contract):
                 result = self.run_tailor(analysis=analyse(type_contrat=contract))
-                self.assertTrue(result["accroche"]["texte"].endswith(sentence))
-                self.assertTrue(result["accroche"]["texte"].startswith("Data Scientist junior orientée Machine"))
+                self.assertEqual(result["accroche"]["texte"], "Data Scientist junior orientée Machine Learning. " + sentence)
+
+    def test_accroche_ending_with_comma_continues_the_sentence(self):
+        result = self.run_tailor(chosen=selection(accroche="ats"), analysis=analyse(type_contrat="CDI"))
+        self.assertEqual(result["accroche"]["texte"], "Data Scientist junior orientée données, je recherche un poste en CDI.")
 
 
 class ReportTests(TailorTestCase):
-    def test_strengths_gaps_and_notions(self):
-        report = self.run_tailor()["rapport"]
-        self.assertEqual([p["demande"] for p in report["points_forts"]], ["Python", "Scikit-learn"])
-        self.assertIn("prj-fictif-classif", report["points_forts"][1]["preuves"])
-        self.assertEqual(report["manques"], ["Kubernetes"])
-        self.assertEqual([n["competence"] for n in report["competences_a_niveau_notions"]],
-                         ["TensorFlow", "SQL", "Git/GitHub"])
-        self.assertEqual(report["informations"], [])
+    def test_keywords_present_and_absent_with_synonyms_and_notions(self):
+        report = self.run_tailor()["rapport"]["mots_cles"]
+        present = {p["mot_cle"]: (p["via"], p["notion"]) for p in report["presents"]}
+        self.assertEqual(present["Python"], ("Python", False))
+        self.assertEqual(present["conteneurisation"], ("Docker", True))
+        self.assertEqual(present["environnement cloud"], ("AWS", True))
+        self.assertEqual(present["Git"], ("Git", True))
+        self.assertEqual(present["TensorFlow"], ("TensorFlow", True))
+        self.assertEqual(report["absents"], ["Kubernetes"])
+
+    def test_keyword_coverage_reads_the_given_text_only(self):
+        master = cv_tailor.load_master(FIXTURE)
+        coverage = cv_tailor.keyword_coverage(OffreAnalyse.model_validate(analyse()), "Python et Docker", master)
+        self.assertEqual([p["mot_cle"] for p in coverage["presents"]], ["Python", "conteneurisation"])
 
     def test_experience_requested_is_reported_from_text(self):
         offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "5 ans d'expérience minimum, profil senior")
-        # Même si l'analyse du LLM sous-estime l'expérience, le texte de l'offre est vérifié en code.
-        report = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]
-        self.assertIn("Expérience mentionnée dans l'offre : au moins 5 ans.", report["informations"])
+        infos = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]["informations"]
+        self.assertIn("Expérience mentionnée dans l'offre : au moins 5 ans.", infos)
 
-    def test_contract_and_language_are_reported(self):
-        report = self.run_tailor(analysis=analyse(type_contrat="alternance", langue="en"))["rapport"]
-        infos = report["informations"]
+    def test_range_in_offer_reports_lower_bound(self):
+        offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "3 à 5 ans d'expérience")
+        infos = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]["informations"]
+        self.assertIn("Expérience mentionnée dans l'offre : au moins 3 ans.", infos)
+
+    def test_contract_and_language_are_reported_never_blocking(self):
+        offer = OFFRE_FICTIVE + "\nKubernetes, Spark et Scala exigés. 8 ans d'expérience."
+        result = self.run_tailor(offer=offer, analysis=analyse(type_contrat="alternance", langue="en",
+                                                              niveau_experience="senior", experience_min_annees=8))
+        infos = result["rapport"]["informations"]
         self.assertTrue(any("Contrat de l'offre : alternance" in a for a in infos))
         self.assertTrue(any("analyse « alternance », texte de l'offre « CDD »" in a for a in infos))
         self.assertTrue(any("non rédigée en français" in a for a in infos))
-
-    def test_gaps_senior_level_and_other_contract_never_block(self):
-        offer = OFFRE_FICTIVE + "\nKubernetes, Spark et Scala exigés. 8 ans d'expérience. Stage de 6 mois."
-        result = self.run_tailor(offer=offer, analysis=analyse(
-            type_contrat="stage", niveau_experience="senior", experience_min_annees=8,
-            competences_requises=["Kubernetes", "Spark", "Scala"]))
-        # La sélection complète est produite ; les écarts sont de simples informations.
-        self.assertEqual(len(result["experiences"][0]["projets"][0]["accomplissements"]), 2)
-        self.assertEqual(result["rapport"]["manques"], ["Kubernetes", "Spark", "Scala"])
-        self.assertEqual(len(result["rapport"]["informations"]), 3)
-        for info in result["rapport"]["informations"]:
+        self.assertEqual(len(result["ordre_accomplissements"]), 10)
+        for info in infos:
             for word in ("déconseill", "refus", "bloqu", "en dessous", "hors cible"):
                 self.assertNotIn(word, info.lower())
 
     def test_years_detection(self):
         cases = {"3+ years of experience in ML": 3, "Expérience de 4 ans minimum": 4,
                  "5 ans d'expérience minimum": 5, "Débutant accepté": None, "Expérience : < 6 mois": None,
-                 # Fourchettes : la borne basse.
                  "Vous justifiez de 3 à 5 ans d’expérience en data science": 3, "3-5 years of experience": 3,
-                 "3 – 5 ans d'expérience": 3, "entre 2 et 4 ans d'expérience": 2,
-                 # « Bac+2 » n'est pas le début d'une fourchette.
-                 "Bac+2 5 ans d'expérience": 5}
+                 "3 – 5 ans d'expérience": 3, "entre 2 et 4 ans d'expérience": 2, "Bac+2 5 ans d'expérience": 5}
         for text, expected in cases.items():
             with self.subTest(text=text):
                 self.assertEqual(cv_tailor.years_required_in_text(text), expected)
 
-    def test_range_in_offer_reports_lower_bound(self):
-        offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "3 à 5 ans d'expérience")
-        report = self.run_tailor(analysis=analyse(experience_min_annees=None), offer=offer)["rapport"]
-        self.assertIn("Expérience mentionnée dans l'offre : au moins 3 ans.", report["informations"])
-
-    def test_project_proof_found_in_titles_texts_and_tags(self):
-        report = self.run_tailor(analysis=analyse(
-            competences_requises=["MLOps", "IA générative", "recherche documentaire", "Kubernetes"],
-            competences_souhaitees=[]))["rapport"]
-        strengths = {p["demande"]: p["preuves"] for p in report["points_forts"]}
-        # MLOps : texte d'un accomplissement ; IA générative : tag ; recherche documentaire : titre.
-        self.assertEqual(strengths, {"MLOps": ["prj-fictif-classif"], "IA générative": ["prj-fictif-rag"],
-                                     "recherche documentaire": ["prj-fictif-rag"]})
-        self.assertEqual(report["manques"], ["Kubernetes"])
-
 
 class PrivacyTests(TailorTestCase):
-    def test_no_personal_data_sent_to_llm(self):
+    def test_no_personal_data_and_no_markup_sent_to_llm(self):
         self.run_tailor()
         sent = json.dumps(self.provider.calls, ensure_ascii=False)
         for value in ("camille.exemple@example.com", "06 00 11 22 33", "0600112233", "Villefictive",
-                      "Camille", "EXEMPLE", "Société Fictive", "Laboratoire Imaginaire", "linkedin", "github.com"):
+                      "Camille", "EXEMPLE", "Société Fictive", "Laboratoire Imaginaire", "linkedin", "github.com", "**"):
             self.assertNotIn(value, sent)
         self.assertEqual(len(self.provider.calls), 2)
-        # L'analyse de l'offre ne reçoit aucune donnée du CV.
         self.assertNotIn("acc-classif-01", json.dumps(self.provider.calls[0], ensure_ascii=False))
+
+    def test_selection_prompt_asks_for_an_order_using_required_and_desired_skills(self):
+        self.run_tailor(analysis=analyse(competences_souhaitees=["LangChain", "IA générative"]))
+        system, user = self.provider.calls[1]
+        for expected in ("tu ne", "TOUS les projets", "competences_requises ET competences_souhaitees", "redondant_avec"):
+            self.assertIn(expected, system["content"])
+        payload = json.loads(user["content"])
+        self.assertEqual(payload["analyse_offre"]["competences_souhaitees"], ["LangChain", "IA générative"])
+        items = {a["id"]: a for p in payload["catalogue"]["projets"] for a in p["accomplissements"]}
+        self.assertEqual(items["acc-dash-03"]["redondant_avec"], "certifications")
 
     def test_personal_data_in_catalogue_blocks_the_request(self):
         master = cv_tailor.load_master(FIXTURE)
@@ -281,11 +247,23 @@ class InputTests(unittest.TestCase):
         with self.assertRaisesRegex(CVTailorError, "Preuves inconnues"):
             cv_tailor.check_master(master)
 
+    def test_unclosed_bold_markup_and_bad_redundancy_target_are_rejected(self):
+        master = cv_tailor.load_master(FIXTURE)
+        master["experiences"][0]["projets"][0]["accomplissements"][0]["texte"] = "Texte **non fermé."
+        with self.assertRaisesRegex(CVTailorError, "gras non fermé"):
+            cv_tailor.check_master(master)
+        master = cv_tailor.load_master(FIXTURE)
+        master["experiences"][1]["projets"][0]["accomplissements"][2]["redondant_avec"] = "inexistante"
+        with self.assertRaisesRegex(CVTailorError, "rubrique absente"):
+            cv_tailor.check_master(master)
+
     @unittest.skipUnless((PROJECT_ROOT / "cv_master.yaml").is_file(), "CV maître personnel absent (ignoré par git)")
     def test_real_master_is_consistent(self):
         master = cv_tailor.load_master(PROJECT_ROOT / "cv_master.yaml")
         payload = json.dumps(cv_tailor.selection_payload(master), ensure_ascii=False)
         cv_tailor._check_no_personal_data(payload, master)
+        self.assertNotIn("**", payload)
+        self.assertIn("notions_master", master["competences"])
 
 
 if __name__ == "__main__":

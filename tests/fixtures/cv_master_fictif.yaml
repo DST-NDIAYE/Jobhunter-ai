@@ -17,6 +17,8 @@ contacts:
 accroches:
   ml: "Data Scientist junior orientée Machine Learning."
   genai: "Data Scientist junior orientée IA générative."
+  # Terminée par une virgule : l'objectif prolonge la phrase.
+  ats: "Data Scientist junior orientée données,"
 
 objectifs:
   CDI: "Je recherche un poste en CDI."
@@ -39,8 +41,10 @@ experiences:
         technologies: [Python, Scikit-learn, TF-IDF]
         accomplissements:
           - {id: acc-classif-01, texte: "Nettoyage des données de tickets.", tags: [preparation-donnees]}
-          - {id: acc-classif-02, texte: "Entraînement de modèles de classification.", tags: [classification]}
+          - {id: acc-classif-02, texte: "Entraînement de **modèles de classification**.", tags: [classification]}
           - {id: acc-classif-03, texte: "Mise en production du pipeline selon les pratiques MLOps.", tags: [pipeline]}
+          - {id: acc-classif-04, texte: "Suivi hebdomadaire des performances du modèle.", tags: [suivi]}
+          - {id: acc-classif-05, texte: "Rédaction de la documentation du pipeline.", tags: [documentation]}
       - id: prj-fictif-rag
         titre: "Assistant RAG fictif de recherche documentaire"
         technologies: [Python, LangChain, FAISS]
@@ -103,5 +107,14 @@ competences:
     - {nom: LangChain, niveau: courant, preuves: [prj-fictif-rag]}
     - {nom: FAISS, niveau: courant, preuves: [prj-fictif-rag]}
     - {nom: expressions régulières (Regex), niveau: notions, preuves: []}
+  notions_master:
+    - {nom: Docker, niveau: notions, preuves: [frm-fictif-master]}
+    - {nom: AWS, niveau: notions, preuves: [frm-fictif-master]}
   outils:
     - {nom: Git/GitHub, niveau: notions, preuves: []}
+
+langues:
+  - {langue: "Français", niveau: "Natif"}
+  - {langue: "Anglais", niveau: "B2"}
+
+qualites: [Rigueur fictive, curiosité fictive]
