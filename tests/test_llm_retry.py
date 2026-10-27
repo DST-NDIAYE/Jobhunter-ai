@@ -7,7 +7,7 @@ import httpx
 
 from app import llm
 from app.config import Settings
-from app.llm.base import ProviderError, RetryableProviderError, chat_completion
+from app.llm.base import ProviderError, QuotaProviderError, RetryableProviderError, chat_completion
 from app.llm.gemini_provider import GeminiProvider
 
 
@@ -55,6 +55,20 @@ class RetryTests(unittest.TestCase):
         self.assertIsInstance(result, RetryableProviderError)
         self.assertEqual(len(provider.models), 3)
 
+    def test_quota_is_not_retried_on_the_same_model_but_uses_fallback(self):
+        quota = QuotaProviderError("quota")
+        result, provider, sleep = self.run_with([quota, "réponse de secours"], fallback="secours")
+        self.assertEqual(result, "réponse de secours")
+        self.assertEqual(provider.models, ["principal", "secours"])
+        sleep.assert_not_called()
+
+    def test_quota_on_every_model_stops_with_a_clear_message(self):
+        quota = QuotaProviderError("quota")
+        result, provider, _ = self.run_with([quota, quota], fallback="secours")
+        self.assertIsInstance(result, QuotaProviderError)
+        self.assertIn("Quota atteint pour principal, secours : réessayez plus tard", str(result))
+        self.assertEqual(provider.models, ["principal", "secours"])
+
     def test_other_errors_are_not_retried_but_use_fallback(self):
         result, provider, sleep = self.run_with([ProviderError("modèle retiré"), "ok"], fallback="fake/secours")
         self.assertEqual(result, "ok")
@@ -78,13 +92,27 @@ class StatusClassificationTests(unittest.TestCase):
         GeminiProvider().generate(messages=[{"role": "user", "content": "x"}], model="gemini-test",
                                   api_key="cle-test", timeout=5)
 
-    def test_429_and_503_are_retryable(self):
-        for status in (429, 503):
-            with self.subTest(status=status), patch("httpx.Client.post", respond(status)):
-                with self.assertRaises(RetryableProviderError):
-                    self.call_chat()
-                with self.assertRaises(RetryableProviderError):
-                    self.call_gemini()
+    def test_503_is_retryable(self):
+        with patch("httpx.Client.post", respond(503)):
+            with self.assertRaises(RetryableProviderError):
+                self.call_chat()
+            with self.assertRaises(RetryableProviderError):
+                self.call_gemini()
+
+    def test_429_is_a_quota_error_and_gemini_skips_its_second_endpoint(self):
+        calls = []
+
+        def post(self, url, *args, **kwargs):
+            calls.append(str(url))
+            return respond(429)(self, url)
+
+        with patch("httpx.Client.post", post):
+            with self.assertRaises(QuotaProviderError):
+                self.call_chat()
+            calls.clear()
+            with self.assertRaises(QuotaProviderError):
+                self.call_gemini()
+        self.assertEqual(len(calls), 1)  # pas d'appel au second point d'accès, même quota
 
     def test_404_is_not_retryable(self):
         with patch("httpx.Client.post", respond(404)):

@@ -2,7 +2,7 @@
 
 import time
 
-from app.llm.base import Provider, ProviderError, RetryableProviderError
+from app.llm.base import Provider, ProviderError, QuotaProviderError, RetryableProviderError
 from app.llm.mistral_provider import MistralProvider
 from app.llm.openai_provider import OpenAIProvider
 from app.llm.gemini_provider import GeminiProvider
@@ -47,21 +47,27 @@ RETRY_DELAYS = (2.0, 5.0)
 
 
 def generate_with_retry(provider, model, settings, **kwargs):
-    """Réessaie sur surcharge (429/503), puis passe au modèle de secours LLM_FALLBACK_MODEL.
+    """Réessaie sur surcharge (503), puis passe au modèle de secours LLM_FALLBACK_MODEL.
 
-    Le modèle de secours utilise le même fournisseur ; il est aussi essayé si le modèle
-    principal échoue pour une autre raison (modèle retiré, réponse invalide).
+    Quota atteint (429) : aucun nouvel essai sur le même modèle, passage direct au secours ; si tous les
+    modèles sont à court de quota, QuotaProviderError avec un message clair. Le modèle de secours utilise
+    le même fournisseur ; il est aussi essayé si le principal échoue pour une autre raison (modèle retiré,
+    réponse invalide).
     """
     fallback = settings.llm_fallback_model.strip()
     if fallback.startswith(provider + "/"):
         fallback = fallback.split("/", 1)[1]
     models = [model] + ([fallback] if fallback and fallback != model else [])
-    last_error = None
+    last_error, out_of_quota = None, []
     for current in models:
         for attempt in range(len(RETRY_DELAYS) + 1):
             try:
                 return PROVIDERS[provider].generate(model=current, api_key=settings.llm_api_key,
                                                     timeout=settings.http_timeout, **kwargs)
+            except QuotaProviderError as exc:
+                last_error = exc
+                out_of_quota.append(current)
+                break
             except RetryableProviderError as exc:
                 last_error = exc
                 if attempt < len(RETRY_DELAYS):
@@ -69,4 +75,7 @@ def generate_with_retry(provider, model, settings, **kwargs):
             except ProviderError as exc:
                 last_error = exc
                 break
+    if out_of_quota and len(out_of_quota) == len(models):
+        raise QuotaProviderError(f"Quota atteint pour {', '.join(models)} : réessayez plus tard "
+                                 "(le quota se renouvelle en général le lendemain).")
     raise last_error

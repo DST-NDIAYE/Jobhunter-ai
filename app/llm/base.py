@@ -43,14 +43,23 @@ class ProviderError(Exception):
 
 
 class RetryableProviderError(ProviderError):
-    """Service surchargé ou quota momentané (HTTP 429 / 503) : un nouvel essai peut réussir."""
+    """Service surchargé (HTTP 503) : un nouvel essai sur le même modèle peut réussir."""
 
 
-RETRYABLE_STATUSES = (429, 503)
+class QuotaProviderError(ProviderError):
+    """Quota atteint (HTTP 429) : inutile de réessayer le même modèle."""
+
+
+RETRYABLE_STATUSES = (503,)
+QUOTA_STATUS = 429
 
 
 def is_retryable(exc: Exception) -> bool:
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE_STATUSES
+
+
+def is_quota(exc: Exception) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == QUOTA_STATUS
 
 
 class Provider(Protocol):
@@ -85,6 +94,8 @@ def chat_completion(endpoint, *, messages, model, api_key, timeout, openai=False
                 raise ValueError("Réponse incomplète ou refusée.")
             return schema.model_validate_json(choice["message"]["content"])
     except httpx.HTTPStatusError as exc:
+        if is_quota(exc):
+            raise QuotaProviderError("Quota du service IA atteint.") from None
         if is_retryable(exc):
             raise RetryableProviderError("Service IA surchargé, réessayez plus tard.") from None
         raise ProviderError("Service IA indisponible ou réponse invalide.") from None

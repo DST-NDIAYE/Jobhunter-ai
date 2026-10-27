@@ -75,9 +75,20 @@ def letter_with(section, index, *phrases):
     return data
 
 
-def errors(data, **analysis):
+def issues(data, **analysis):
     cv, master = make_cv(**analysis)
     return cover_letter.validate_letter(Lettre.model_validate(data), master, OffreAnalyse.model_validate(cv["analyse"]))
+
+
+def errors(data, **analysis):
+    found = issues(data, **analysis)
+    return found["bloquants"] + found["a_revoir"]
+
+
+def level(data, fragment, **analysis):
+    """Niveau (« bloquants » ou « a_revoir ») du premier écart qui contient fragment."""
+    found = issues(data, **analysis)
+    return next((lvl for lvl in ("bloquants", "a_revoir") if any(fragment in e for e in found[lvl])), None)
 
 
 def has(errs, fragment):
@@ -95,17 +106,19 @@ class SequenceProvider:
 
 
 class GenerationTests(unittest.TestCase):
-    def generate(self, *responses):
+    def generate(self, *responses, settings=None):
         self.provider = SequenceProvider(responses)
         cv, _ = make_cv()
         with patch.dict(llm.PROVIDERS, {"fake": self.provider}), \
                 patch("app.cover_letter.resolve_provider", return_value=("fake", "modele-test")):
-            return cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE, settings=Settings(llm_api_key="cle"))
+            return cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE,
+                                                settings=settings or Settings(llm_api_key="cle"))
 
     def test_valid_letter_is_accepted_in_one_call(self):
         self.assertEqual(errors(LETTER), [])
         result = self.generate(LETTER)
         self.assertEqual(result["tentatives"], 1)
+        self.assertEqual((result["statut"], result["a_corriger"]), ("finale", []))
         self.assertTrue(250 <= result["mots"] <= 300)
 
     def test_no_personal_data_sent_to_llm(self):
@@ -125,11 +138,33 @@ class GenerationTests(unittest.TestCase):
         second = json.loads(self.provider.calls[1][1]["content"])
         self.assertTrue(any("acc-invente-99" in c for c in second["corrections_a_appliquer"]))
 
-    def test_letter_still_invalid_after_correction_is_refused(self):
+    def test_blocking_issue_after_correction_is_refused(self):
         bad = letter_with("missions", 0, ph("J'ai aussi travaillé sur ce cas.", "acc-invente-99"))
-        with self.assertRaisesRegex(LetterError, "acc-invente-99"):
+        with self.assertRaisesRegex(LetterError, "points bloquants.*acc-invente-99"):
             self.generate(bad, bad)
         self.assertEqual(len(self.provider.calls), 2)
+
+    def test_style_issue_after_correction_gives_a_draft_with_its_points(self):
+        jargon = letter_with("motivation", None, ph("Ce poste est une opportunité intéressante."))
+        result = self.generate(jargon, jargon)
+        self.assertEqual(result["statut"], "brouillon")
+        self.assertEqual(result["a_corriger"], ["formule creuse ou jargon interdit : « opportunité »"])
+        second = json.loads(self.provider.calls[1][1]["content"])
+        self.assertIn("formule creuse ou jargon interdit : « opportunité »", second["corrections_a_appliquer"])
+
+    def test_letter_uses_its_own_model_and_never_a_lite_one(self):
+        seen = []
+        with patch("app.cover_letter.resolve_provider", side_effect=lambda s, mode: seen.append(
+                (s.llm_model, s.llm_fallback_model)) or ("fake", s.llm_model)), \
+                patch.dict(llm.PROVIDERS, {"fake": SequenceProvider([LETTER])}):
+            cv, _ = make_cv()
+            cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE, settings=Settings(
+                llm_api_key="cle", llm_model="gemini-x-flash-lite", llm_fallback_model="gemini-y-flash-lite",
+                letter_model="gemini-x-flash", letter_fallback_model=""))
+        # LETTER_MODEL pour la lettre ; le secours « lite » hérité de l'analyse est écarté.
+        self.assertEqual(seen, [("gemini-x-flash", "")])
+        with self.assertRaisesRegex(LetterError, "« lite », interdit pour la lettre"):
+            self.generate(LETTER, settings=Settings(llm_api_key="cle", llm_model="gemini-x-flash-lite"))
 
     def test_no_llm_configured(self):
         cv, _ = make_cv()
@@ -217,6 +252,37 @@ class SkillTests(unittest.TestCase):
         self.assertFalse(has(errors(with_cert, mots_cles=["Machine Learning"]), "certification"))
 
 
+class LevelTests(unittest.TestCase):
+    def test_unproven_facts_personal_data_and_politeness_are_blocking(self):
+        cases = {
+            "chiffre absent du CV": letter_with("missions", 0, ph("J'ai atteint 95 % de précision.", "acc-classif-02")),
+            "outil ou compétence absent": letter_with("missions", 0, ph("J'ai déployé ces modèles avec Kubernetes.",
+                                                                        "acc-classif-03")),
+            "origine « formation »": letter_with("missions", 1, ph("Durant ma formation, j'ai utilisé LangChain.",
+                                                                   "frm-fictif-master")),
+            "affirmation sans preuve": letter_with("missions", 1, ph("J'ai aussi présenté ces résultats en comité.")),
+            "formule de politesse écrite par le LLM": letter_with("motivation", None,
+                                                                  ph("Veuillez agréer mes salutations distinguées.")),
+            "donnée personnelle": letter_with("motivation", None, ph("Écrivez-moi à camille.exemple@example.com.")),
+        }
+        for fragment, data in cases.items():
+            with self.subTest(fragment=fragment):
+                self.assertEqual(level(data, fragment), "bloquants")
+
+    def test_length_jargon_and_style_are_to_review(self):
+        short = copy.deepcopy(LETTER)
+        short["motivation"]["phrases"] = short["motivation"]["phrases"][:1]
+        cases = {
+            "longueur de": short,
+            "formule creuse ou jargon": letter_with("motivation", None, ph("Une opportunité à saisir.")),
+            "figure sur le CV": letter_with("missions", 1, ph("J'ai aussi des bases en SQL.")),
+            "au plus une phrase": letter_with("motivation", None, ph("Je souhaite aussi découvrir de nouveaux outils.")),
+        }
+        for fragment, data in cases.items():
+            with self.subTest(fragment=fragment):
+                self.assertEqual(level(data, fragment), "a_revoir")
+
+
 class StyleTests(unittest.TestCase):
     def test_jargon_company_name_politeness_and_length(self):
         jargon = letter_with("motivation", None, ph("Ce poste est une opportunité de valoriser les données."))
@@ -226,7 +292,7 @@ class StyleTests(unittest.TestCase):
         anonymous["accroche"]["phrases"][0] = ph("Votre équipe recrute un Data Scientist pour industrialiser ses modèles.")
         self.assertTrue(has(errors(anonymous), "nommer l'entreprise"))
         polite = letter_with("motivation", None, ph("Veuillez agréer mes salutations distinguées."))
-        self.assertTrue(has(errors(polite), "formule d'appel, de politesse"))
+        self.assertTrue(has(errors(polite), "formule de politesse écrite par le LLM"))
         short = copy.deepcopy(LETTER)
         short["motivation"]["phrases"] = short["motivation"]["phrases"][:1]
         self.assertTrue(has(errors(short), "longueur de"))
@@ -267,6 +333,25 @@ class RenderTests(unittest.TestCase):
                                                     today=date(2026, 10, 27))
             self.assertEqual(files["pdf"].name, "LM_EXEMPLE_Exemplia-Analytics_Data-Scientist.pdf")
             self.assertTrue(files["texte"].read_text().startswith("Camille EXEMPLE"))
+
+    def test_draft_is_clearly_marked_and_replaces_the_final_version(self):
+        def one_page(html):
+            document = pymupdf.open()
+            document.new_page()
+            return document.tobytes()
+
+        draft = {"lettre": LETTER, "statut": "brouillon", "a_corriger": ["longueur de 240 mots"]}
+        with tempfile.TemporaryDirectory() as folder:
+            final = cover_letter.build_letter_files(self.result, self.cv, self.master, folder, render=one_page)
+            files = cover_letter.build_letter_files(draft, self.cv, self.master, folder, render=one_page)
+            self.assertEqual(files["pdf"].name, "LM_EXEMPLE_Exemplia-Analytics_Data-Scientist_BROUILLON.pdf")
+            self.assertFalse(final["pdf"].exists())  # l'ancienne version finale ne peut plus être prise pour la bonne
+            text = files["texte"].read_text()
+            self.assertTrue(text.startswith("=== BROUILLON À CORRIGER – NE PAS ENVOYER ==="))
+            self.assertIn("- longueur de 240 mots", text)
+        parts = cover_letter.letter_parts(draft, self.cv, self.master)
+        self.assertIn("BROUILLON À CORRIGER", cover_letter.letter_html(parts))
+        self.assertNotIn("BROUILLON", cover_letter.letter_html(self.parts))
 
     def test_text_is_escaped_in_html(self):
         parts = dict(self.parts, corps=["<script>x</script>"])

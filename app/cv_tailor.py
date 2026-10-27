@@ -6,6 +6,7 @@ texte de CV. Le code vérifie chaque identifiant, complète ce que le LLM aurait
 les compétences (celles citées par l'offre en tête de chaque rubrique).
 """
 
+import hashlib
 import json
 import re
 import unicodedata
@@ -20,6 +21,8 @@ from app.llm import generate_with_retry, resolve_provider
 from app.llm.base import ProviderError
 
 MASTER_PATH = PROJECT_ROOT / "cv_master.yaml"
+# Cache local (data/ est ignoré par git) : une offre n'est jamais analysée deux fois.
+CACHE_DIR = PROJECT_ROOT / "data" / "cache"
 
 # À partir de ce seuil, l'expérience demandée est signalée (information, jamais bloquante).
 SEUIL_ANNEES_JUNIOR = 3
@@ -430,6 +433,35 @@ def assemble(selection: Selection, analyse: OffreAnalyse, master: dict, offer_te
     }
 
 
+def offer_key(offer_text: str) -> str:
+    """Empreinte du texte de l'offre : clé du cache d'analyse."""
+    return hashlib.sha256(offer_text.strip().encode("utf-8")).hexdigest()
+
+
+def selection_key(offer_text: str, master: dict) -> str:
+    """Offre + contenu du master envoyé au LLM + consigne : tout changement relance la sélection."""
+    material = json.dumps([offer_key(offer_text), selection_payload(master), SELECTION_PROMPT],
+                          ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _cache_read(cache_dir: Path | None, kind: str, key: str, schema):
+    if cache_dir is None:
+        return None
+    try:
+        return schema.model_validate(json.loads((Path(cache_dir) / kind / f"{key}.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return None  # absent ou illisible : recalculé
+
+
+def _cache_write(cache_dir: Path | None, kind: str, key: str, value: BaseModel) -> None:
+    if cache_dir is None:
+        return
+    folder = Path(cache_dir) / kind
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{key}.json").write_text(value.model_dump_json(indent=2), encoding="utf-8")
+
+
 def _ask(provider, model, settings, messages, schema):
     try:
         # Nouvel essai sur surcharge (429/503), puis modèle de secours LLM_FALLBACK_MODEL.
@@ -438,8 +470,13 @@ def _ask(provider, model, settings, messages, schema):
         raise CVTailorError(str(exc)) from None
 
 
-def tailor_cv(offer_text: str, *, master_path: Path = MASTER_PATH, settings=None) -> dict:
-    """Analyse l'offre, fait ordonner le contenu par le LLM, valide en code et assemble le CV complet."""
+def tailor_cv(offer_text: str, *, master_path: Path = MASTER_PATH, settings=None,
+              cache_dir: Path | None = CACHE_DIR) -> dict:
+    """Analyse l'offre, fait ordonner le contenu par le LLM, valide en code et assemble le CV complet.
+
+    L'analyse et la sélection sont mises en cache (cache_dir=None pour désactiver) : une offre déjà vue
+    ne déclenche aucun appel au LLM.
+    """
     settings = settings or get_settings()
     offer_text = (offer_text or "").strip()
     if not offer_text:
@@ -447,13 +484,26 @@ def tailor_cv(offer_text: str, *, master_path: Path = MASTER_PATH, settings=None
     if len(offer_text) > MAX_OFFRE_CARACTERES:
         raise CVTailorError("Texte de l'offre trop long.")
     master = load_master(master_path)
-    provider, model = resolve_provider(settings, "auto")
-    if not provider:
-        raise CVTailorError("Aucun LLM configuré : renseignez LLM_PROVIDER, LLM_MODEL et LLM_API_KEY.")
 
-    analyse = _ask(provider, model, settings, analysis_messages(offer_text), OffreAnalyse)
-    selection = _ask(provider, model, settings, selection_messages(analyse, master), Selection)
-    validate_selection(selection, master)
+    def llm():
+        provider, model = resolve_provider(settings, "auto")
+        if not provider:
+            raise CVTailorError("Aucun LLM configuré : renseignez LLM_PROVIDER, LLM_MODEL et LLM_API_KEY.")
+        return provider, model
+
+    key = offer_key(offer_text)
+    analyse = _cache_read(cache_dir, "analyses", key, OffreAnalyse)
+    if analyse is None:
+        analyse = _ask(*llm(), settings, analysis_messages(offer_text), OffreAnalyse)
+        _cache_write(cache_dir, "analyses", key, analyse)
+    sel_key = selection_key(offer_text, master)
+    selection = _cache_read(cache_dir, "selections", sel_key, Selection)
+    if selection is None:
+        selection = _ask(*llm(), settings, selection_messages(analyse, master), Selection)
+        validate_selection(selection, master)
+        _cache_write(cache_dir, "selections", sel_key, selection)
+    else:
+        validate_selection(selection, master)
     cv = assemble(selection, analyse, master, offer_text)
     return {"analyse": analyse.model_dump(), **cv,
             "rapport": {"informations": informations(analyse, offer_text),

@@ -7,6 +7,7 @@ Le code vérifie preuves, chiffres, outils, origine des compétences, ton et lon
 seule correction est demandée au LLM, sinon la lettre est refusée.
 """
 
+from dataclasses import replace
 from datetime import date
 from html import escape
 import json
@@ -19,7 +20,7 @@ from app.config import get_settings
 from app.cv_pdf import ChromiumRenderer, OUTPUT_DIR, page_count, pdf_filename
 from app.cv_tailor import (NOTIONS_CATEGORY, SYNONYMES, CVTailorError, MASTER_PATH, OffreAnalyse,
                            _check_no_personal_data, _normalized, _projects, _skills, keyword_coverage, load_master,
-                           master_text, mentions, plain, redundant_ids)
+                           master_text, mentions, plain, redundant_ids, _personal_values)
 from app.llm import generate_with_retry, resolve_provider
 from app.llm.base import ProviderError
 
@@ -230,32 +231,36 @@ def _origin_ids(master: dict) -> dict[str, set[str]]:
     return ids
 
 
-def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> list[str]:
-    """Liste des écarts (vide si la lettre est acceptée). Contrôles faits en code, pas par le LLM."""
+def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> dict[str, list[str]]:
+    """Écarts sur deux niveaux, contrôlés en code et pas par le LLM :
+    - « bloquants » : compétence, outil, chiffre, projet ou origine non prouvés par le master, donnée
+      personnelle, formule d'appel ou de politesse écrite par le LLM ;
+    - « a_revoir » : longueur, jargon, style et structure.
+    """
     projects = _projects(master)
     items = {a["id"]: a for p in projects.values() for a in p["accomplissements"]}
     owner = {a["id"]: pid for pid, p in projects.items() for a in p["accomplissements"]}
     known_ids = set(items) | set(projects) | {e["id"] for e in master["experiences"]} \
         | {f["id"] for f in master.get("formation") or []}
-    errors = []
+    blocking, review = [], []
 
     # Structure et preuves.
     paragraphs = [lettre.accroche, *lettre.missions, lettre.motivation]
     for paragraph in paragraphs:
         unknown = [i for i in paragraph.preuves if i not in known_ids]
         if unknown:
-            errors.append(f"identifiants inconnus dans preuves : {', '.join(unknown)}")
+            blocking.append(f"identifiants inconnus dans preuves : {', '.join(unknown)}")
     if len(lettre.missions) != 2:
-        errors.append(f"il faut exactement 2 paragraphes de missions (reçu {len(lettre.missions)})")
+        review.append(f"il faut exactement 2 paragraphes de missions (reçu {len(lettre.missions)})")
     cited_projects = set()
     redundant = redundant_ids(master)  # ex. la puce des certifications : ne compte pas comme une mission
     for i, paragraph in enumerate(lettre.missions, 1):
         cited = [p for p in paragraph.preuves if p in owner and p not in redundant]
         if not cited:
-            errors.append(f"le paragraphe de missions {i} ne cite aucun accomplissement acc-*")
+            review.append(f"le paragraphe de missions {i} ne cite aucun accomplissement acc-*")
         cited_projects |= {owner[p] for p in cited} | {p for p in paragraph.preuves if p in projects}
     if lettre.missions and not 2 <= len(cited_projects) <= 3:
-        errors.append(f"les missions doivent relier 2 à 3 projets (reçu {len(cited_projects)})")
+        review.append(f"les missions doivent relier 2 à 3 projets (reçu {len(cited_projects)})")
 
     # Chaque affirmation cite ses puces : au moins un identifiant, des puces cohérentes avec la phrase,
     # et aucune puce clairement reprise sans être citée.
@@ -268,12 +273,12 @@ def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> list
         words = _word_stems(phrase.texte)
         stems = set().union(*words)
         if AFFIRMATION.search(phrase.texte) and not phrase.preuves:
-            errors.append(f"affirmation sans preuve : « {phrase.texte[:80]} »")
+            blocking.append(f"affirmation sans preuve : « {phrase.texte[:80]} »")
         for item in (i for i in phrase.preuves if i in items):
             context = item_stems[item] | _stems(projects[owner[item]]["titre"] + " "
                                                  + " ".join(projects[owner[item]].get("technologies") or []))
             if not stems & context:
-                errors.append(f"« {item} » cité sans rapport avec la phrase « {phrase.texte[:60]} »")
+                blocking.append(f"« {item} » cité sans rapport avec la phrase « {phrase.texte[:60]} »")
         # Toute phrase où le candidat parle de lui, même sans « j'ai », qui reprend clairement une puce doit
         # la citer. Les mots déjà expliqués par les puces citées et leurs projets ne comptent pas.
         if not PREMIERE_PERSONNE.search(phrase.texte):
@@ -285,35 +290,39 @@ def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> list
             # Nombre de mots de la phrase qui partagent une racine rare (au plus 2 puces) avec la puce.
             distinctive = sum(1 for w in words if not w & explained and any(frequency[s] <= 2 for s in w & its))
             if item not in phrase.preuves and distinctive >= 2:
-                errors.append(f"la phrase « {phrase.texte[:60]} » s'appuie sur {item}, absent de ses preuves")
+                blocking.append(f"la phrase « {phrase.texte[:60]} » s'appuie sur {item}, absent de ses preuves")
 
     body = "\n".join(body_paragraphs(lettre))
     words = word_count(body)
     if not MIN_MOTS <= words <= MAX_MOTS:
-        errors.append(f"longueur de {words} mots (politesse comprise), attendu {MIN_MOTS} à {MAX_MOTS}")
+        review.append(f"longueur de {words} mots (politesse comprise), attendu {MIN_MOTS} à {MAX_MOTS}")
     lowered = body.lower()
-    errors += [f"formule creuse ou jargon interdit : « {f} »" for f in FORMULES_CREUSES if f in lowered]
+    review += [f"formule creuse ou jargon interdit : « {f} »" for f in FORMULES_CREUSES if f in lowered]
     llm_text = "\n".join(body_paragraphs(lettre)[:-1])
-    if re.search(r"[\[\]{}]", llm_text) or re.match(r"(?i)\s*(madame|monsieur)", lettre.accroche.texte) \
-            or re.search(r"(?i)agréer|salutations|sentiments", llm_text):
-        errors.append("formule d'appel, de politesse ou champ à compléter dans le texte (ajoutés par le code)")
+    if re.search(r"(?i)agréer|salutations|sentiments distingués|cordialement", llm_text):
+        blocking.append("formule de politesse écrite par le LLM (ajoutée par le code)")
+    if re.search(r"[\[\]{}]", llm_text) or re.match(r"(?i)\s*(madame|monsieur)", lettre.accroche.texte):
+        blocking.append("formule d'appel ou champ à compléter dans le texte (ajoutés par le code)")
+    lowered_body = llm_text.lower()
+    if any(value.lower() in lowered_body for value in _personal_values(master)):
+        blocking.append("donnée personnelle (nom ou coordonnées) dans le texte du LLM")
     entreprise = analyse.entreprise.strip()
     if entreprise and not mentions(entreprise, lettre.accroche.texte):
-        errors.append(f"l'accroche doit nommer l'entreprise de l'offre ({entreprise})")
+        review.append(f"l'accroche doit nommer l'entreprise de l'offre ({entreprise})")
 
     # Chiffres : chacun doit exister dans le master (puces, dates, certifications…).
     master_texts = [master_text(master, ""), *(json.dumps(e, ensure_ascii=False) for e in master["experiences"]),
                     json.dumps(master.get("formation") or [], ensure_ascii=False),
                     json.dumps(master.get("certifications") or [], ensure_ascii=False)]
     allowed_numbers = set().union(*(_numbers(t) for t in master_texts))
-    errors += [f"chiffre absent du CV : {n}" for n in sorted(_numbers(llm_text) - allowed_numbers)]
+    blocking += [f"chiffre absent du CV : {n}" for n in sorted(_numbers(llm_text) - allowed_numbers)]
 
     # Certifications : une phrase quand l'offre demande un sujet qu'elles couvrent.
     if covered_certifications(master, analyse):
         cert_sentences = [ph.texte for p in paragraphs for ph in p.phrases if "certification" in ph.texte.lower()]
         organismes = [c.get("organisme") for c in master.get("certifications") or [] if c.get("organisme")]
         if len(cert_sentences) != 1 or not any(mentions(o, cert_sentences[0]) for o in organismes):
-            errors.append("mentionner la certification (organisme et sujet) en une seule phrase")
+            review.append("mentionner la certification (organisme et sujet) en une seule phrase")
 
     # Outils et compétences.
     skills = _skills(master)
@@ -342,7 +351,7 @@ def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> list
     sentences = [ph.texte for p in paragraphs for ph in p.phrases]
     learning_sentences = [s for s in sentences if any(m in s.lower() for m in MARQUEURS_APPRENTISSAGE)]
     if len(learning_sentences) > 1:
-        errors.append("au plus une phrase sur l'envie d'approfondir")
+        review.append("au plus une phrase sur l'envie d'approfondir")
     absent_named = set()
     for sentence in sentences:
         low = sentence.lower()
@@ -356,42 +365,64 @@ def validate_letter(lettre: Lettre, master: dict, analyse: OffreAnalyse) -> list
             if found is None:
                 absent_named.add(term)
                 if not (learning and any(mentions(term, r) or mentions(r, term) for r in requested)):
-                    errors.append(f"outil ou compétence absent du CV présenté comme acquis : « {term} »")
+                    blocking.append(f"outil ou compétence absent du CV présenté comme acquis : « {term} »")
                 continue
             if found == "cv" and gap:
-                errors.append(f"« {term} » figure sur le CV : ne pas la présenter comme une notion ou une lacune")
+                review.append(f"« {term} » figure sur le CV : ne pas la présenter comme une notion ou une lacune")
             if found == "notions" and not any(m in low for m in ("notion", "master", "bases")):
-                errors.append(f"« {term} » est une notion du Master : à présenter comme telle, pas comme une maîtrise")
+                blocking.append(f"« {term} » est une notion du Master : à présenter comme telle, pas comme une maîtrise")
             for origin in origins:
                 if not proven_by(term, origin_ids[origin]):
-                    errors.append(f"origine « {origin} » non prouvée par le CV pour « {term} »")
+                    blocking.append(f"origine « {origin} » non prouvée par le CV pour « {term} »")
     if len(absent_named) > 1:
-        errors.append(f"compétences absentes énumérées une à une ({', '.join(sorted(absent_named))}) : "
+        review.append(f"compétences absentes énumérées une à une ({', '.join(sorted(absent_named))}) : "
                       "une seule phrase générale au plus")
-    return list(dict.fromkeys(errors))
+    return {"bloquants": list(dict.fromkeys(blocking)), "a_revoir": list(dict.fromkeys(review))}
+
+
+def is_lite(model: str) -> bool:
+    return "lite" in (model or "").lower()
+
+
+def letter_settings(settings):
+    """Modèles de la lettre : LETTER_MODEL (sinon LLM_MODEL), jamais un modèle « lite »."""
+    model = settings.letter_model or settings.llm_model
+    fallback = settings.letter_fallback_model or settings.llm_fallback_model
+    if is_lite(model):
+        raise LetterError(f"Le modèle « {model} » est un modèle « lite », interdit pour la lettre : "
+                          "renseignez LETTER_MODEL avec un modèle complet.")
+    return replace(settings, llm_model=model, llm_fallback_model="" if is_lite(fallback) else fallback)
 
 
 def generate_letter(cv: dict, offer_text: str, *, master_path: Path = MASTER_PATH, settings=None) -> dict:
-    """Fait rédiger le corps de la lettre, le vérifie et renvoie phrases, preuves et nombre de tentatives."""
-    settings = settings or get_settings()
+    """Fait rédiger le corps de la lettre et le vérifie.
+
+    Tout écart est renvoyé au LLM pour une seconde tentative. Si des points bloquants subsistent, la lettre
+    est refusée ; s'il ne reste que des points à revoir, elle est rendue en « brouillon » avec leur liste.
+    """
+    settings = letter_settings(settings or get_settings())
     master = load_master(master_path)
     analyse = OffreAnalyse.model_validate(cv["analyse"])
     provider, model = resolve_provider(settings, "auto")
     if not provider:
-        raise LetterError("Aucun LLM configuré : renseignez LLM_PROVIDER, LLM_MODEL et LLM_API_KEY.")
+        raise LetterError("Aucun LLM configuré : renseignez LLM_PROVIDER, LETTER_MODEL (ou LLM_MODEL) et LLM_API_KEY.")
     payload = letter_payload(cv, master, offer_text)
-    errors = None
+    corrections = None
     for attempt in range(1, MAX_TENTATIVES + 1):
         try:
-            lettre = generate_with_retry(provider, model, settings, messages=letter_messages(payload, master, errors),
-                                         schema=Lettre)
+            lettre = generate_with_retry(provider, model, settings,
+                                         messages=letter_messages(payload, master, corrections), schema=Lettre)
         except (ProviderError, CVTailorError) as exc:
             raise LetterError(str(exc)) from None
-        errors = validate_letter(lettre, master, analyse)
-        if not errors:
-            return {"lettre": lettre.model_dump(), "tentatives": attempt,
-                    "mots": word_count("\n".join(body_paragraphs(lettre)))}
-    raise LetterError("Lettre refusée après correction : " + " ; ".join(errors) + ".")
+        issues = validate_letter(lettre, master, analyse)
+        corrections = issues["bloquants"] + issues["a_revoir"]
+        if not corrections:
+            break
+    if issues["bloquants"]:
+        raise LetterError("Lettre refusée, points bloquants après correction : " + " ; ".join(issues["bloquants"]) + ".")
+    return {"lettre": lettre.model_dump(), "tentatives": attempt, "modele": settings.llm_model,
+            "statut": "brouillon" if issues["a_revoir"] else "finale", "a_corriger": issues["a_revoir"],
+            "mots": word_count("\n".join(body_paragraphs(lettre)))}
 
 
 MOIS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
@@ -415,11 +446,17 @@ def letter_parts(letter: dict, cv: dict, master: dict, today: date | None = None
         "appel": "Madame, Monsieur,",
         "corps": body_paragraphs(lettre),
         "signature": name,
+        "statut": letter.get("statut", "finale"),
+        "a_corriger": letter.get("a_corriger") or [],
     }
 
 
 def letter_text(parts: dict) -> str:
-    lines = [parts["nom"], *parts["coordonnees"], "", parts["destinataire"], "", parts["lieu_date"], "",
+    lines = []
+    if parts.get("statut") == "brouillon":
+        lines += ["=== BROUILLON À CORRIGER – NE PAS ENVOYER ===", "Points à revoir :",
+                  *(f"- {point}" for point in parts["a_corriger"]), "=" * 46, ""]
+    lines += [parts["nom"], *parts["coordonnees"], "", parts["destinataire"], "", parts["lieu_date"], "",
              parts["objet"], "", parts["appel"], ""]
     for paragraph in parts["corps"]:
         lines += [paragraph, ""]
@@ -448,7 +485,10 @@ body {{ font-family: Calibri, Carlito, "Segoe UI", Helvetica, Arial, sans-serif;
 .appel {{ margin-top: 1.2em; }}
 p {{ margin-top: 0.8em; text-align: justify; }}
 .signature {{ margin-top: 1.4em; text-align: right; font-weight: bold; }}
+.brouillon {{ border: 1.5pt solid #b00020; color: #b00020; font-weight: bold; text-align: center;
+              padding: 0.3em; margin-bottom: 0.8em; }}
 </style></head><body>
+{'<div class="brouillon">BROUILLON À CORRIGER – ne pas envoyer</div>' if parts.get("statut") == "brouillon" else ""}
 <div class="nom">{e(parts['nom'])}</div>{''.join(f'<div>{e(c)}</div>' for c in parts['coordonnees'])}
 <div class="dest">{e(parts['destinataire'])}</div><div class="date">{e(parts['lieu_date'])}</div>
 <div class="objet">{e(parts['objet'])}</div><div class="appel">{e(parts['appel'])}</div>{body}
@@ -474,9 +514,15 @@ def build_letter_files(letter: dict, cv: dict, master: dict, output_dir: Path = 
         pdf, style = fit(render)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = "LM_" + pdf_filename(cv, master).removeprefix("CV_").removesuffix(".pdf")
+    base = "LM_" + pdf_filename(cv, master).removeprefix("CV_").removesuffix(".pdf")
+    draft = parts["statut"] == "brouillon"
+    stem = f"{base}_BROUILLON" if draft else base
+    # La version de l'autre statut pour la même offre est périmée : on la retire pour éviter toute confusion.
+    for old in (output_dir / f"{base if draft else base + '_BROUILLON'}{ext}" for ext in (".pdf", ".txt")):
+        old.unlink(missing_ok=True)
     pdf_path, txt_path = output_dir / f"{stem}.pdf", output_dir / f"{stem}.txt"
     pdf_path.write_bytes(pdf)
     txt_path.write_text(letter_text(parts), encoding="utf-8")
     font, margin = LETTER_STYLES[style]
-    return {"pdf": pdf_path, "texte": txt_path, "pages": page_count(pdf), "police_pt": font, "marges_mm": margin}
+    return {"pdf": pdf_path, "texte": txt_path, "pages": page_count(pdf), "police_pt": font, "marges_mm": margin,
+            "statut": parts["statut"], "a_corriger": parts["a_corriger"]}

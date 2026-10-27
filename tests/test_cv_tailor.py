@@ -1,7 +1,9 @@
 """Adaptation du CV par l'ordre : LLM simulé, offre et CV maître fictifs, aucun appel réseau."""
 
+import hashlib
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -63,7 +65,8 @@ class TailorTestCase(unittest.TestCase):
         self.provider = FakeProvider({"OffreAnalyse": analysis or analyse(), "Selection": chosen or selection()})
         with patch.dict(llm.PROVIDERS, {"fake": self.provider}), \
                 patch("app.cv_tailor.resolve_provider", return_value=("fake", "modele-test")):
-            return cv_tailor.tailor_cv(offer, master_path=FIXTURE, settings=Settings(llm_api_key="cle-test"))
+            return cv_tailor.tailor_cv(offer, master_path=FIXTURE, settings=Settings(llm_api_key="cle-test"),
+                                       cache_dir=None)
 
 
 def project_items(result):
@@ -254,14 +257,59 @@ class PrivacyTests(TailorTestCase):
             cv_tailor.selection_messages(OffreAnalyse.model_validate(analyse()), master)
 
 
+class CacheTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = self.enterContext(tempfile.TemporaryDirectory())
+        self.provider = FakeProvider({"OffreAnalyse": analyse(), "Selection": selection()})
+
+    def tailor(self, master_path=FIXTURE, settings=None):
+        with patch.dict(llm.PROVIDERS, {"fake": self.provider}), \
+                patch("app.cv_tailor.resolve_provider", return_value=("fake", "modele-test")):
+            return cv_tailor.tailor_cv(OFFRE_FICTIVE, master_path=master_path, cache_dir=self.folder,
+                                       settings=settings or Settings(llm_api_key="cle-test"))
+
+    def test_same_offer_never_calls_the_llm_twice(self):
+        first = self.tailor()
+        self.assertEqual(len(self.provider.calls), 2)
+        second = self.tailor()
+        self.assertEqual(len(self.provider.calls), 2)  # analyse et sélection lues dans le cache
+        self.assertEqual(first["ordre_accomplissements"], second["ordre_accomplissements"])
+        key = hashlib.sha256(OFFRE_FICTIVE.strip().encode()).hexdigest()
+        self.assertTrue((Path(self.folder) / "analyses" / f"{key}.json").is_file())
+
+    def test_cache_works_without_any_llm(self):
+        self.tailor()
+        with patch("app.cv_tailor.resolve_provider", return_value=(None, "")):
+            result = cv_tailor.tailor_cv(OFFRE_FICTIVE, master_path=FIXTURE, cache_dir=self.folder,
+                                         settings=Settings(llm_provider="local"))
+        self.assertEqual(result["analyse"]["entreprise"], "Exemplia Analytics")
+
+    def test_master_change_recomputes_the_selection_only(self):
+        self.tailor()
+        changed = Path(self.folder) / "master.yaml"
+        changed.write_text(FIXTURE.read_text().replace("Nettoyage des données de tickets.",
+                                                        "Nettoyage soigné des données de tickets."))
+        self.tailor(master_path=changed)
+        self.assertEqual([c[0]["content"][:30] for c in self.provider.calls[2:]],
+                         [cv_tailor.SELECTION_PROMPT[:30]])
+
+    def test_unreadable_cache_is_recomputed(self):
+        self.tailor()
+        for file in Path(self.folder).rglob("*.json"):
+            file.write_text("{pas du json")
+        self.tailor()
+        self.assertEqual(len(self.provider.calls), 4)
+
+
 class InputTests(unittest.TestCase):
     def test_no_llm_configured_is_a_clear_error(self):
         with self.assertRaisesRegex(CVTailorError, "Aucun LLM configuré"):
-            cv_tailor.tailor_cv(OFFRE_FICTIVE, master_path=FIXTURE, settings=Settings(llm_provider="local"))
+            cv_tailor.tailor_cv(OFFRE_FICTIVE, master_path=FIXTURE, settings=Settings(llm_provider="local"),
+                                cache_dir=None)
 
     def test_empty_offer_and_broken_master_are_rejected(self):
         with self.assertRaisesRegex(CVTailorError, "vide"):
-            cv_tailor.tailor_cv("  ", master_path=FIXTURE, settings=Settings())
+            cv_tailor.tailor_cv("  ", master_path=FIXTURE, settings=Settings(), cache_dir=None)
         master = cv_tailor.load_master(FIXTURE)
         master["competences"]["langages"][0]["preuves"] = ["prj-inexistant"]
         with self.assertRaisesRegex(CVTailorError, "Preuves inconnues"):

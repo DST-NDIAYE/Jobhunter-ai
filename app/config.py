@@ -27,6 +27,9 @@ class Settings:
     llm_api_key: str = field(default="", repr=False)
     llm_model: str = ""
     llm_fallback_model: str = ""
+    # Modèles de la lettre de motivation (par défaut ceux de l'analyse) ; jamais un modèle « lite ».
+    letter_model: str = ""
+    letter_fallback_model: str = ""
     gmail_client_secret_file: Path = PROJECT_ROOT / "secrets/client_secret.json"
     gmail_token_file: Path = PROJECT_ROOT / "tokens/gmail_token.json"
     gmail_user: str = ""
@@ -55,6 +58,8 @@ def get_settings() -> Settings:
         llm_api_key=(env_dict.get("LLM_API_KEY") or "").strip(),
         llm_model=os.getenv("LLM_MODEL", "").strip(),
         llm_fallback_model=os.getenv("LLM_FALLBACK_MODEL", "").strip(),
+        letter_model=os.getenv("LETTER_MODEL", "").strip(),
+        letter_fallback_model=os.getenv("LETTER_FALLBACK_MODEL", "").strip(),
         gmail_client_secret_file=project_path(os.getenv("GMAIL_CLIENT_SECRET_FILE") or "secrets/client_secret.json"),
         gmail_token_file=project_path(os.getenv("GMAIL_TOKEN_FILE") or "tokens/gmail_token.json"),
         gmail_user=os.getenv("GMAIL_USER", "").strip(),
