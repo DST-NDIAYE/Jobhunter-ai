@@ -122,6 +122,34 @@ class SelectionTests(TailorTestCase):
             with self.assertRaisesRegex(CVTailorError, "plus de 2 accomplissements"):
                 self.run_tailor(chosen=selection())
 
+    def test_redundant_accomplishment_is_moved_last(self):
+        # Le LLM place la formation (redondante) en tête : le code la remet en dernier partout.
+        chosen = selection(projets=[{"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03", "acc-dash-01"]},
+                                    {"projet": "prj-fictif-classif", "accomplissements": ["acc-classif-02"]}])
+        result = self.run_tailor(chosen=chosen)
+        dashboard = result["experiences"][1]["projets"][0]
+        self.assertEqual([a["id"] for a in dashboard["accomplissements"]], ["acc-dash-01", "acc-dash-03"])
+        self.assertEqual(result["ordre_accomplissements"], ["acc-dash-01", "acc-classif-02", "acc-dash-03"])
+
+    def test_project_with_only_redundant_accomplishments_is_rejected(self):
+        chosen = selection(projets=[{"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03"]}])
+        with self.assertRaisesRegex(CVTailorError, "sans accomplissement réalisé"):
+            self.run_tailor(chosen=chosen)
+
+    def test_redundancy_is_sent_to_the_llm(self):
+        self.run_tailor()
+        system, user = self.provider.calls[1]
+        self.assertIn("redondant_avec", system["content"])
+        items = {a["id"]: a for p in json.loads(user["content"])["catalogue"]["projets"] for a in p["accomplissements"]}
+        self.assertEqual(items["acc-dash-03"]["redondant_avec"], "certifications")
+        self.assertNotIn("redondant_avec", items["acc-dash-01"])
+
+    def test_redundancy_must_point_to_an_existing_section(self):
+        master = cv_tailor.load_master(FIXTURE)
+        master["experiences"][1]["projets"][0]["accomplissements"][2]["redondant_avec"] = "inexistante"
+        with self.assertRaisesRegex(CVTailorError, "rubrique absente"):
+            cv_tailor.check_master(master)
+
     def test_selection_priorities_use_required_and_desired_skills(self):
         self.run_tailor(analysis=analyse(competences_souhaitees=["LangChain", "IA générative"]))
         system, user = self.provider.calls[1]

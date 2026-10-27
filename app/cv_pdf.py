@@ -1,8 +1,8 @@
 """CV PDF d'une page à partir de la sélection de tailor_cv et de cv_master.yaml.
 
 Aucun appel au LLM ni au réseau : les coordonnées sont lues dans le master au moment du rendu.
-Si le CV dépasse une page : d'abord les matières des formations antérieures sont retirées, puis
-un accomplissement à la fois, en gardant au moins un accomplissement par projet affiché. La taille
+Si le CV dépasse une page : d'abord les matières des formations antérieures sont retirées, puis les
+accomplissements redondants, puis un accomplissement à la fois en gardant au moins un par projet affiché. La taille
 de police n'est jamais réduite.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 import pymupdf
 
 from app.config import PROJECT_ROOT
-from app.cv_tailor import _project_proofs, _projects
+from app.cv_tailor import _project_proofs, _projects, redundant_ids
 
 OUTPUT_DIR = PROJECT_ROOT / "output"
 BODY_FONT_PT = 10
@@ -229,10 +229,17 @@ def linked_to_offer(project_id: str, cv: dict, master: dict) -> bool:
 def next_reduction(cv: dict, master: dict) -> tuple[str, list[str]] | None:
     """Prochaine réduction : (projet, accomplissements à retirer), ou None s'il n'y en a plus.
 
-    D'abord le dernier accomplissement du projet qui en a le plus (à égalité, le moins prioritaire) ;
-    quand chaque projet n'en a plus qu'un, un projet entier mais seulement s'il n'a aucun lien avec l'offre.
+    D'abord un accomplissement redondant (déjà couvert par une autre rubrique) ; puis le dernier
+    accomplissement du projet qui en a le plus (à égalité, le moins prioritaire) ; quand chaque projet
+    n'en a plus qu'un, un projet entier mais seulement s'il n'a aucun lien avec l'offre.
     """
     projects = _project_order(cv)
+    redundant = redundant_ids(master)
+    # Quelle que soit sa place dans le projet (une sélection ancienne peut l'avoir mis en tête).
+    for pid, items in reversed(projects):
+        extra = [i for i in items if i in redundant]
+        if extra:
+            return pid, [extra[-1]]
     rank = {pid: i for i, (pid, _) in enumerate(projects)}
     crowded = [(pid, items) for pid, items in projects if len(items) > 1]
     if crowded:

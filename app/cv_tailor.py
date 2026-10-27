@@ -108,6 +108,8 @@ accroche : l'identifiant de la variante d'accroche la plus adaptée à l'offre.
 Priorités : la pertinence se juge sur competences_requises ET competences_souhaitees de l'offre
 (puis mots_cles) : d'abord ce qui prouve une compétence requise, puis une compétence souhaitée.
 Un projet qui prouve une compétence souhaitée doit figurer dans la sélection.
+Un accomplissement marqué redondant_avec est déjà couvert par une autre rubrique du CV : place-le
+toujours en dernier dans son projet et jamais comme seul accomplissement d'un projet.
 projets : les projets les plus pertinents d'abord ; pour chacun, les identifiants acc-* de SES
 accomplissements, du plus pertinent au moins pertinent. N'utilise que les accomplissements
 listés sous ce projet. Garde le maximum de contenu pertinent dans les limites fournies et
@@ -144,6 +146,12 @@ def check_master(master: dict) -> None:
     ids += [f["id"] for f in master.get("formation") or []]
     if len(ids) != len(set(ids)):
         raise CVTailorError("Identifiants en double dans le CV maître.")
+    for exp in master["experiences"]:
+        for project in exp.get("projets") or []:
+            for item in project["accomplissements"]:
+                target = item.get("redondant_avec")
+                if target is not None and not master.get(target):
+                    raise CVTailorError(f"« {item['id']} » est redondant avec une rubrique absente : {target}.")
     names = []
     for items in master["competences"].values():
         for skill in items:
@@ -161,6 +169,11 @@ def _projects(master):
     return {p["id"]: p for e in master["experiences"] for p in e.get("projets") or []}
 
 
+def redundant_ids(master) -> set[str]:
+    """Accomplissements déjà couverts par une autre rubrique (ex. une formation déjà dans Certifications)."""
+    return {a["id"] for p in _projects(master).values() for a in p["accomplissements"] if a.get("redondant_avec")}
+
+
 def _skills(master):
     return {s["nom"]: {**s, "categorie": category}
             for category, items in master["competences"].items() for s in items}
@@ -172,7 +185,8 @@ def selection_payload(master: dict) -> dict:
         "accroches": dict(master["accroches"]),
         "projets": [
             {"id": p["id"], "titre": p["titre"], "technologies": p.get("technologies") or [],
-             "accomplissements": [{"id": a["id"], "texte": a["texte"], "tags": a.get("tags") or []}
+             "accomplissements": [{"id": a["id"], "texte": a["texte"], "tags": a.get("tags") or [],
+                                   **({"redondant_avec": a["redondant_avec"]} if a.get("redondant_avec") else {})}
                                   for a in p["accomplissements"]]}
             for p in _projects(master).values()
         ],
@@ -248,6 +262,7 @@ def validate_selection(selection: Selection, master: dict, offer_text: str) -> N
     if selection.accroche not in master["accroches"]:
         errors.append(f"accroche inconnue « {selection.accroche} »")
 
+    redundant = redundant_ids(master)
     seen_projects, seen_items = set(), set()
     for choice in selection.projets:
         if choice.projet not in projects:
@@ -258,6 +273,8 @@ def validate_selection(selection: Selection, master: dict, offer_text: str) -> N
         seen_projects.add(choice.projet)
         if not choice.accomplissements:
             errors.append(f"projet sans accomplissement « {choice.projet} »")
+        elif set(choice.accomplissements) <= redundant:
+            errors.append(f"projet « {choice.projet} » sans accomplissement réalisé (seulement des redondants)")
         if len(choice.accomplissements) > MAX_PAR_PROJET:
             errors.append(f"plus de {MAX_PAR_PROJET} accomplissements pour « {choice.projet} »")
         for item in choice.accomplissements:
@@ -382,8 +399,12 @@ def assemble(selection: Selection, analyse: OffreAnalyse, master: dict, offer_te
     contract = analyse.type_contrat if analyse.type_contrat in CONTRATS_RECHERCHES else "defaut"
     body = " ".join(master["accroches"][selection.accroche].split())
     objective = " ".join(master["objectifs"][contract].split())
-    order = {c.projet: c.accomplissements for c in selection.projets}
+    # Les accomplissements redondants passent en dernier : dans leur projet et dans la priorité globale.
+    redundant = redundant_ids(master)
+    order = {c.projet: sorted(c.accomplissements, key=lambda i: i in redundant) for c in selection.projets}
     rank = {pid: i for i, pid in enumerate(order)}
+    priority = [i for items in order.values() for i in items]
+    priority = [i for i in priority if i not in redundant] + [i for i in priority if i in redundant]
     experiences = []
     for exp in master["experiences"]:
         chosen = sorted((p for p in exp.get("projets") or [] if p["id"] in order), key=lambda p: rank[p["id"]])
@@ -401,7 +422,7 @@ def assemble(selection: Selection, analyse: OffreAnalyse, master: dict, offer_te
         "accroche": {"id": selection.accroche, "objectif": contract, "texte": f"{body} {objective}"},
         "experiences": experiences,
         # Priorité globale choisie par le LLM, du plus au moins pertinent (sert à raccourcir le PDF).
-        "ordre_accomplissements": [i for c in selection.projets for i in c.accomplissements],
+        "ordre_accomplissements": priority,
         "competences": [{"nom": n, "categorie": skills[n]["categorie"]} for n in selection.competences],
         "competences_notions": [{"nom": n, "categorie": skills[n]["categorie"]}
                                 for n in selection.competences_notions],

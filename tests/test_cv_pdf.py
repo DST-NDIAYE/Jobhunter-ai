@@ -131,6 +131,40 @@ class FitOnePageTests(unittest.TestCase):
             self.assertEqual(result["projets_retires"], [])
             self.assertTrue(Path(result["path"]).is_file())
 
+    def redundant_cv(self):
+        master = cv_tailor.load_master(FIXTURE)
+        analyse = OffreAnalyse.model_validate({
+            "intitule": "Data Scientist", "entreprise": "Exemplia", "type_contrat": "CDI",
+            "competences_requises": ["Python"], "competences_souhaitees": [], "mots_cles": [],
+            "experience_min_annees": None, "niveau_experience": "junior", "langue": "fr"})
+        selection = Selection.model_validate({
+            "accroche": "ml", "competences": ["Python"], "competences_notions": [],
+            "projets": [{"projet": "prj-fictif-classif",
+                         "accomplissements": ["acc-classif-02", "acc-classif-01", "acc-classif-03"]},
+                        {"projet": "prj-fictif-dashboard", "accomplissements": ["acc-dash-03", "acc-dash-01"]}]})
+        return {"analyse": analyse.model_dump(), **cv_tailor.assemble(selection, analyse, master, "Python")}, master
+
+    def test_redundant_accomplishment_is_removed_before_any_other(self):
+        cv, master = self.redundant_cv()
+        _, final, details = cv_pdf.fit_one_page(cv, master, at_most(4))
+        # Sans la règle, le projet le plus chargé (classif, 3) aurait perdu acc-classif-03.
+        self.assertEqual(details["accomplissements_retires"], ["acc-dash-03"])
+        self.assertIn("acc-classif-03", final["ordre_accomplissements"])
+
+    def test_redundant_accomplishment_is_never_the_one_kept(self):
+        cv, master = self.redundant_cv()
+        _, final, details = cv_pdf.fit_one_page(cv, master, at_most(2))
+        self.assertEqual(details["accomplissements_retires"][0], "acc-dash-03")
+        self.assertEqual(final["ordre_accomplissements"], ["acc-classif-02", "acc-dash-01"])
+
+    def test_redundant_accomplishment_is_removed_first_even_if_listed_first(self):
+        cv, master = self.redundant_cv()
+        # Sélection produite avant la règle : le redondant est en tête de son projet.
+        cv["ordre_accomplissements"] = ["acc-classif-02", "acc-classif-01", "acc-classif-03", "acc-dash-03", "acc-dash-01"]
+        _, final, details = cv_pdf.fit_one_page(cv, master, at_most(4))
+        self.assertEqual(details["accomplissements_retires"], ["acc-dash-03"])
+        self.assertIn("acc-dash-01", final["ordre_accomplissements"])
+
     def test_only_projects_unrelated_to_the_offer_are_removed(self):
         cv, master = make_cv(requises=("LangChain",))  # seul le projet RAG est lié à l'offre
         _, final, details = cv_pdf.fit_one_page(cv, master, at_most(1))

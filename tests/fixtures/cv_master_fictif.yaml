@@ -62,6 +62,8 @@ experiences:
         accomplissements:
           - {id: acc-dash-01, texte: "Construction d'un tableau de bord.", tags: [visualisation]}
           - {id: acc-dash-02, texte: "Automatisation d'un rapport hebdomadaire.", tags: [automatisation]}
+          - {id: acc-dash-03, texte: "Formation fictive et obtention de 2 certifications.", tags: [certifications],
+             redondant_avec: certifications}
 
 formation:
   - id: frm-fictif-master
@@ -80,6 +82,12 @@ formation:
     lieu: "Villefictive"
     statut: "obtenue"
     matieres: [Algèbre, Probabilités]
+
+certifications:
+  - organisme: "Organisme Fictif"
+    nombre: 2
+    annee: "2024"
+    intitules: ["Certification Fictive A", "Certification Fictive B"]
 
 competences:
   langages:
