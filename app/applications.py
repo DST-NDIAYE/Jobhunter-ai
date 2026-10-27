@@ -1,7 +1,7 @@
 """Suivi manuel des candidatures en SQLite. Aucune action d'envoi."""
 
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import sqlite3
@@ -105,3 +105,48 @@ def save_notes(external_id: str, notes: str, source: str = "france_travail", db_
         )
         if cursor.rowcount != 1:
             raise ValueError("Offre introuvable dans SQLite.")
+
+
+RELANCE_APRES = timedelta(days=7)
+STATUTS_CLOS = ("Entretien", "Refus", "Archivée")
+
+
+def _relance(status: str | None, sent_at: str | None, now: datetime) -> tuple[str | None, bool]:
+    """Date de relance (envoi + 7 jours) et relance conseillée si la date est passée."""
+    if status != "Candidature envoyée" or not sent_at:
+        return None, False
+    try:
+        due = datetime.fromisoformat(sent_at.replace("Z", "+00:00")) + RELANCE_APRES
+    except ValueError:
+        return None, False
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return due.isoformat(timespec="seconds"), now >= due
+
+
+def tracked_applications(db_path=None, now: datetime | None = None) -> list[dict]:
+    """Candidatures réelles : offres ayant un statut, et opportunités La Bonne Boîte (lecture seule)."""
+    now = now or datetime.now(timezone.utc)
+    rows = []
+    with closing(sqlite3.connect(_database_path(db_path))) as connection:
+        connection.row_factory = sqlite3.Row
+        for row in connection.execute(
+            "SELECT source, external_id, company, title, application_status, application_sent_at, status_updated_at, url "
+            "FROM jobs WHERE application_status IS NOT NULL"
+        ):
+            rows.append({"source": row["source"], "external_id": row["external_id"], "entreprise": row["company"] or "",
+                         "poste": row["title"] or "", "statut": row["application_status"],
+                         "date_envoi": row["application_sent_at"], "date": row["application_sent_at"] or row["status_updated_at"],
+                         "url": row["url"], "lecture_seule": False})
+        for row in connection.execute(
+            "SELECT source, external_id, company_name, job_keyword, application_status, application_sent_at, "
+            "status_updated_at, application_url, source_url FROM opportunities "
+            "WHERE application_status IS NOT NULL OR application_sent_at IS NOT NULL"
+        ):
+            rows.append({"source": row["source"], "external_id": row["external_id"], "entreprise": row["company_name"] or "",
+                         "poste": row["job_keyword"] or "", "statut": row["application_status"] or "",
+                         "date_envoi": row["application_sent_at"], "date": row["application_sent_at"] or row["status_updated_at"],
+                         "url": row["application_url"] or row["source_url"], "lecture_seule": True})
+    for item in rows:
+        item["relance_le"], item["relance_conseillee"] = _relance(item["statut"], item["date_envoi"], now)
+    return sorted(rows, key=lambda r: r["date"] or "", reverse=True)

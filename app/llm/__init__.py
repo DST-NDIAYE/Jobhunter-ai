@@ -17,7 +17,14 @@ PROVIDERS: dict[str, Provider] = {
 
 
 def resolve_provider(settings, mode="auto"):
-    """La sélection UI Automatique respecte LLM_PROVIDER, notamment local."""
+    """La sélection UI Automatique respecte LLM_PROVIDER, notamment local.
+
+    Mode test (JOBHUNTER_FAKE_LLM=1) : faux modèle local, aucun appel réseau ni quota consommé.
+    """
+    from app.test_mode import FAKE_MODEL, FakeLLM, fake_llm_enabled
+    if fake_llm_enabled():
+        PROVIDERS.setdefault("fake", FakeLLM())
+        return "fake", FAKE_MODEL
     configured = (settings.llm_provider or "local").lower()
     model = settings.llm_model.strip()
     if mode == "local" or (mode == "auto" and configured == "local"):

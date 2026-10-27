@@ -106,13 +106,39 @@ class SequenceProvider:
 
 
 class GenerationTests(unittest.TestCase):
-    def generate(self, *responses, settings=None):
+    def setUp(self):
+        self.cache = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def generate(self, *responses, settings=None, model="modele-test", regenerate=False, cv=None):
         self.provider = SequenceProvider(responses)
-        cv, _ = make_cv()
+        cv = cv or make_cv()[0]
         with patch.dict(llm.PROVIDERS, {"fake": self.provider}), \
-                patch("app.cover_letter.resolve_provider", return_value=("fake", "modele-test")):
-            return cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE,
+                patch("app.cover_letter.resolve_provider", return_value=("fake", model)):
+            return cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE, cache_dir=self.cache,
+                                                regenerate=regenerate,
                                                 settings=settings or Settings(llm_api_key="cle"))
+
+    def test_cached_letter_is_reused_without_any_call(self):
+        first = self.generate(LETTER)
+        self.assertFalse(first["depuis_cache"])
+        again = self.generate()  # aucune réponse disponible : un appel au LLM échouerait
+        self.assertEqual((again["depuis_cache"], again["tentatives"], again["lettre"]), (True, 0, first["lettre"]))
+        self.assertEqual(len(self.provider.calls), 0)
+
+    def test_regenerate_calls_the_llm_and_replaces_the_cache(self):
+        self.generate(LETTER)
+        other = letter_with("motivation", None, ph("Je reste disponible pour un échange."))
+        regenerated = self.generate(other, regenerate=True)
+        self.assertEqual((regenerated["depuis_cache"], len(self.provider.calls)), (False, 1))
+        self.assertEqual(self.generate()["lettre"], regenerated["lettre"])
+
+    def test_cache_key_depends_on_model_and_cv_selection(self):
+        self.generate(LETTER)
+        self.assertFalse(self.generate(LETTER, model="autre-modele")["depuis_cache"])
+        cv = make_cv()[0]
+        cv = {**cv, "ordre_accomplissements": list(reversed(cv["ordre_accomplissements"]))}
+        self.assertFalse(self.generate(LETTER, cv=cv)["depuis_cache"])
+        self.assertEqual(len(list((self.cache / "lettres").glob("*.json"))), 3)
 
     def test_valid_letter_is_accepted_in_one_call(self):
         self.assertEqual(errors(LETTER), [])
@@ -158,7 +184,7 @@ class GenerationTests(unittest.TestCase):
                 (s.llm_model, s.llm_fallback_model)) or ("fake", s.llm_model)), \
                 patch.dict(llm.PROVIDERS, {"fake": SequenceProvider([LETTER])}):
             cv, _ = make_cv()
-            cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE, settings=Settings(
+            cover_letter.generate_letter(cv, OFFRE, master_path=FIXTURE, cache_dir=None, settings=Settings(
                 llm_api_key="cle", llm_model="gemini-x-flash-lite", llm_fallback_model="gemini-y-flash-lite",
                 letter_model="gemini-x-flash", letter_fallback_model=""))
         # LETTER_MODEL pour la lettre ; le secours « lite » hérité de l'analyse est écarté.

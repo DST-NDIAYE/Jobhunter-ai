@@ -8,6 +8,7 @@ les compétences (celles citées par l'offre en tête de chaque rubrique).
 
 import hashlib
 import json
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -16,13 +17,14 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.config import PROJECT_ROOT, get_settings
+from app.config import PROJECT_ROOT, get_settings, project_path
 from app.llm import generate_with_retry, resolve_provider
 from app.llm.base import ProviderError
 
-MASTER_PATH = PROJECT_ROOT / "cv_master.yaml"
+# Chemins surchargeables (mode test, captures) : CV_MASTER_PATH et JOBHUNTER_CACHE_DIR.
+MASTER_PATH = project_path(os.getenv("CV_MASTER_PATH") or "cv_master.yaml")
 # Cache local (data/ est ignoré par git) : une offre n'est jamais analysée deux fois.
-CACHE_DIR = PROJECT_ROOT / "data" / "cache"
+CACHE_DIR = project_path(os.getenv("JOBHUNTER_CACHE_DIR") or "data/cache")
 
 # À partir de ce seuil, l'expérience demandée est signalée (information, jamais bloquante).
 SEUIL_ANNEES_JUNIOR = 3

@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
@@ -50,14 +50,35 @@ if FRONTEND.is_dir():
     app.mount("/frontend", StaticFiles(directory=FRONTEND), name="frontend")
 
 
+INDEX = FRONTEND / "index.html"
+INTERFACE_ABSENTE = (f"<h1>Interface introuvable</h1><p>Le fichier {INDEX} est absent. "
+                     "L'API fonctionne : voir <a href=\"/docs\">/docs</a>.</p>")
+
+
+def _interface():
+    # Jamais de 404 sur l'interface : la page, ou un message explicite si le fichier manque.
+    if INDEX.is_file():
+        return FileResponse(INDEX)
+    return HTMLResponse(INTERFACE_ABSENTE, status_code=503)
+
+
 @app.get("/", tags=["Interface"], summary="Interface web, ou état de l'API pour un client non navigateur")
 def root(request: Request):
-    index = FRONTEND / "index.html"
-    if "text/html" in request.headers.get("accept", "") and index.is_file():
-        return FileResponse(index)
+    if "text/html" in request.headers.get("accept", ""):
+        return _interface()
     return {"message": "JobHunter AI fonctionne", "version": app.version, "docs": "/docs"}
 
 
 @app.get("/app", tags=["Interface"], summary="Interface web")
 def web_app():
-    return FileResponse(FRONTEND / "index.html")
+    return _interface()
+
+
+@app.get("/index.html", include_in_schema=False)
+def index_html():
+    return RedirectResponse("/")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)

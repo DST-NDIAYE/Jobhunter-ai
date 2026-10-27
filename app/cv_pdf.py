@@ -9,6 +9,7 @@ Si cela ne suffit pas, une erreur claire est levée : aucun projet n'est jamais 
 """
 
 import copy
+import os
 from html import escape
 import re
 import unicodedata
@@ -16,10 +17,11 @@ from pathlib import Path
 
 import pymupdf
 
-from app.config import PROJECT_ROOT
+from app.config import project_path
 from app.cv_tailor import NOTIONS_CATEGORY, OffreAnalyse, keyword_coverage
 
-OUTPUT_DIR = PROJECT_ROOT / "output"
+# Dossier des CV et lettres générés (surchargeable : JOBHUNTER_OUTPUT_DIR).
+OUTPUT_DIR = project_path(os.getenv("JOBHUNTER_OUTPUT_DIR") or "output")
 MIN_PUCES_PAR_PROJET = 3
 
 # Paliers de resserrement (police du corps en pt, interligne, marges en mm), du plus aéré au plus serré.
@@ -37,6 +39,16 @@ CATEGORY_LABELS = {
     "notions_master": "Notions (Master)",
     "outils_methodes": "Outils & méthodes",
 }
+SIGLES = {"ia": "IA", "nlp": "NLP", "rag": "RAG", "ml": "ML", "llm": "LLM", "bi": "BI", "sql": "SQL"}
+
+
+def category_label(category: str) -> str:
+    """Libellé d'une rubrique de compétences ; sans libellé connu, le nom sans underscore (« data_science » → « Data science »)."""
+    if category in CATEGORY_LABELS:
+        return CATEGORY_LABELS[category]
+    words = [SIGLES.get(w.lower(), w) for w in category.replace("_", " ").split()]
+    text = " ".join(words)
+    return text[:1].upper() + text[1:]
 
 
 def css(font: float, line_height: float, margin_mm: float) -> str:
@@ -136,7 +148,7 @@ def _education(master: dict, earlier_subjects: bool) -> str:
 
 
 def _skills(cv: dict) -> str:
-    return "".join(f'<div class="bloc"><b>{_e(CATEGORY_LABELS.get(group["categorie"], group["categorie"]))}</b> : '
+    return "".join(f'<div class="bloc"><b>{_e(category_label(group["categorie"]))}</b> : '
                    f'{_e(", ".join(group["noms"]))}</div>' for group in cv["competences"] if group["noms"])
 
 
@@ -213,6 +225,14 @@ def next_bullet(cv: dict) -> str | None:
     return next((i for i in reversed(cv["ordre_accomplissements"]) if counts[owner[i]] > MIN_PUCES_PAR_PROJET), None)
 
 
+def write_preview(pdf_path: Path, dpi: int = 110) -> Path:
+    """Image PNG de la première page, pour l'aperçu dans l'interface (un PDF en iframe ne s'affiche pas partout)."""
+    png_path = Path(pdf_path).with_suffix(".png")
+    with pymupdf.open(pdf_path) as document:
+        document[0].get_pixmap(dpi=dpi).save(png_path)
+    return png_path
+
+
 def page_count(pdf: bytes) -> int:
     with pymupdf.open(stream=pdf, filetype="pdf") as document:
         return document.page_count
@@ -230,7 +250,7 @@ def split_notions(text: str, cv: dict) -> tuple[str, str]:
     start = flat.find(label)
     if start < 0:
         return flat, ""
-    following = [CATEGORY_LABELS.get(g["categorie"], g["categorie"]) + " :" for g in cv["competences"]]
+    following = [category_label(g["categorie"]) + " :" for g in cv["competences"]]
     following += ["Certifications", "Langues"]
     ends = [i for marker in following if (i := flat.find(marker, start + len(label))) >= 0]
     end = min(ends, default=len(flat))

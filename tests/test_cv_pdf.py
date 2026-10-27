@@ -83,12 +83,23 @@ class NotionsSplitTests(unittest.TestCase):
     def test_split_isolates_the_notions_line(self):
         cv, _ = make_cv()
         # Libellés tels qu'affichés pour le master fictif (rubrique « outils » sans libellé dédié).
-        text = ("• Déploiement fictif.\nlangages : Python\nNotions (Master) : Docker,\nAWS\n"
-                "outils : Git/GitHub\nCertifications Organisme Fictif (2)")
+        text = ("• Déploiement fictif.\nLangages : Python\nNotions (Master) : Docker,\nAWS\n"
+                "Outils : Git/GitHub\nCertifications Organisme Fictif (2)")
         main, notions = cv_pdf.split_notions(text, cv)
         self.assertEqual(notions.strip(), "Docker, AWS")
         self.assertNotIn("Docker", main)
-        self.assertIn("outils : Git/GitHub", main)
+        self.assertIn("Outils : Git/GitHub", main)
+
+    def test_category_without_label_is_readable(self):
+        self.assertEqual(cv_pdf.category_label("data_science"), "Data science")
+        self.assertEqual(cv_pdf.category_label("ia_generative"), "IA generative")
+        self.assertEqual(cv_pdf.category_label("outils"), "Outils")
+        self.assertEqual(cv_pdf.category_label("ia_generative_nlp_rag"), "IA générative, NLP & RAG")
+        cv, master = make_cv()
+        self.assertIn("data_science", {g["categorie"] for g in cv["competences"]})  # rubrique sans libellé
+        html = cv_pdf.render_html(cv, master)
+        self.assertIn("<b>Data science</b> :", html)
+        self.assertNotRegex(html, r"<b>[^<]*_[^<]*</b> :")
 
 
 class ReductionTests(unittest.TestCase):

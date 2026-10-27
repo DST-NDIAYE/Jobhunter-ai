@@ -8,6 +8,7 @@ seule correction est demandée au LLM, sinon la lettre est refusée.
 """
 
 from dataclasses import replace
+import hashlib
 from datetime import date
 from html import escape
 import json
@@ -18,8 +19,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.config import get_settings
 from app.cv_pdf import ChromiumRenderer, OUTPUT_DIR, page_count, pdf_filename
-from app.cv_tailor import (NOTIONS_CATEGORY, SYNONYMES, CVTailorError, MASTER_PATH, OffreAnalyse,
-                           _check_no_personal_data, _normalized, _projects, _skills, keyword_coverage, load_master,
+from app.cv_tailor import (CACHE_DIR, NOTIONS_CATEGORY, SYNONYMES, CVTailorError, MASTER_PATH, OffreAnalyse,
+                           _cache_read, _cache_write, _check_no_personal_data, _normalized, _projects, _skills, keyword_coverage, load_master, offer_key,
                            master_text, mentions, plain, redundant_ids, _personal_values)
 from app.llm import generate_with_retry, resolve_provider
 from app.llm.base import ProviderError
@@ -394,11 +395,28 @@ def letter_settings(settings):
     return replace(settings, llm_model=model, llm_fallback_model="" if is_lite(fallback) else fallback)
 
 
-def generate_letter(cv: dict, offer_text: str, *, master_path: Path = MASTER_PATH, settings=None) -> dict:
+def letter_key(cv: dict, offer_text: str, model: str, payload: dict) -> str:
+    """Empreinte de l'offre + sélection du CV + modèle (+ contenu envoyé et consigne : tout changement régénère)."""
+    selection = {"accroche": cv["accroche"]["id"], "ordre": cv["ordre_accomplissements"]}
+    material = json.dumps([offer_key(offer_text), selection, model, payload, LETTRE_PROMPT],
+                          ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _result(lettre: "Lettre", issues: dict, model: str, attempts: int, cached: bool) -> dict:
+    return {"lettre": lettre.model_dump(), "tentatives": attempts, "modele": model, "depuis_cache": cached,
+            "statut": "brouillon" if issues["a_revoir"] else "finale", "a_corriger": issues["a_revoir"],
+            "mots": word_count("\n".join(body_paragraphs(lettre)))}
+
+
+def generate_letter(cv: dict, offer_text: str, *, master_path: Path = MASTER_PATH, settings=None,
+                    cache_dir: Path | None = CACHE_DIR, regenerate: bool = False) -> dict:
     """Fait rédiger le corps de la lettre et le vérifie.
 
     Tout écart est renvoyé au LLM pour une seconde tentative. Si des points bloquants subsistent, la lettre
     est refusée ; s'il ne reste que des points à revoir, elle est rendue en « brouillon » avec leur liste.
+    Une lettre déjà rédigée pour la même offre, la même sélection et le même modèle est reprise du cache
+    (revérifiée, sans appel au LLM) ; regenerate=True force une nouvelle rédaction, qui remplace le cache.
     """
     settings = letter_settings(settings or get_settings())
     master = load_master(master_path)
@@ -407,6 +425,12 @@ def generate_letter(cv: dict, offer_text: str, *, master_path: Path = MASTER_PAT
     if not provider:
         raise LetterError("Aucun LLM configuré : renseignez LLM_PROVIDER, LETTER_MODEL (ou LLM_MODEL) et LLM_API_KEY.")
     payload = letter_payload(cv, master, offer_text)
+    key = letter_key(cv, offer_text, model, payload)
+    cached = None if regenerate else _cache_read(cache_dir, "lettres", key, Lettre)
+    if cached is not None:
+        issues = validate_letter(cached, master, analyse)
+        if not issues["bloquants"]:
+            return _result(cached, issues, model, 0, cached=True)
     corrections = None
     for attempt in range(1, MAX_TENTATIVES + 1):
         try:
@@ -420,9 +444,8 @@ def generate_letter(cv: dict, offer_text: str, *, master_path: Path = MASTER_PAT
             break
     if issues["bloquants"]:
         raise LetterError("Lettre refusée, points bloquants après correction : " + " ; ".join(issues["bloquants"]) + ".")
-    return {"lettre": lettre.model_dump(), "tentatives": attempt, "modele": settings.llm_model,
-            "statut": "brouillon" if issues["a_revoir"] else "finale", "a_corriger": issues["a_revoir"],
-            "mots": word_count("\n".join(body_paragraphs(lettre)))}
+    _cache_write(cache_dir, "lettres", key, lettre)
+    return _result(lettre, issues, model, attempt, cached=False)
 
 
 MOIS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
