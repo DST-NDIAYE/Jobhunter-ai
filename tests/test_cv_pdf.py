@@ -79,6 +79,18 @@ class HtmlTests(unittest.TestCase):
         self.assertEqual(cv_pdf.pdf_filename(self.cv, self.master), "CV_EXEMPLE_Exemplia-Analytics_Data-Scientist.pdf")
 
 
+class NotionsSplitTests(unittest.TestCase):
+    def test_split_isolates_the_notions_line(self):
+        cv, _ = make_cv()
+        # Libellés tels qu'affichés pour le master fictif (rubrique « outils » sans libellé dédié).
+        text = ("• Déploiement fictif.\nlangages : Python\nNotions (Master) : Docker,\nAWS\n"
+                "outils : Git/GitHub\nCertifications Organisme Fictif (2)")
+        main, notions = cv_pdf.split_notions(text, cv)
+        self.assertEqual(notions.strip(), "Docker, AWS")
+        self.assertNotIn("Docker", main)
+        self.assertIn("outils : Git/GitHub", main)
+
+
 class ReductionTests(unittest.TestCase):
     def test_styles_never_go_below_limits(self):
         for font, _, margin in cv_pdf.STYLES:
@@ -165,8 +177,10 @@ class ChromiumTests(unittest.TestCase):
                                 for line in block.get("lines", []) for span in line["spans"])
                 self.assertLessEqual(rightmost, right_edge + 0.5)
         self.assertEqual(result["puces_retirees"], [])
-        present = {p["mot_cle"]: p["via"] for p in result["mots_cles"]["presents"]}
-        self.assertEqual(present["conteneurisation"], "Docker")
+        present = {p["mot_cle"]: (p["via"], p["notion"]) for p in result["mots_cles"]["presents"]}
+        # Docker n'est affiché que dans « Notions (Master) » ; Python l'est ailleurs.
+        self.assertEqual(present["conteneurisation"], ("Docker", True))
+        self.assertEqual(present["Python"], ("Python", False))
         self.assertEqual(result["mots_cles"]["absents"], ["Kubernetes"])
 
     def test_overflowing_cv_is_trimmed_after_layout_qualities_and_subjects(self):

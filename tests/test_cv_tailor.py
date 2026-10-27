@@ -165,14 +165,34 @@ class ReportTests(TailorTestCase):
         self.assertEqual(present["Python"], ("Python", False))
         self.assertEqual(present["conteneurisation"], ("Docker", True))
         self.assertEqual(present["environnement cloud"], ("AWS", True))
-        self.assertEqual(present["Git"], ("Git", True))
-        self.assertEqual(present["TensorFlow"], ("TensorFlow", True))
+        # Git et TensorFlow sont affichés dans les rubriques principales : pas « via notions ».
+        self.assertEqual(present["Git"], ("Git", False))
+        self.assertEqual(present["TensorFlow"], ("TensorFlow", False))
         self.assertEqual(report["absents"], ["Kubernetes"])
 
     def test_keyword_coverage_reads_the_given_text_only(self):
-        master = cv_tailor.load_master(FIXTURE)
-        coverage = cv_tailor.keyword_coverage(OffreAnalyse.model_validate(analyse()), "Python et Docker", master)
+        coverage = cv_tailor.keyword_coverage(OffreAnalyse.model_validate(analyse()), "Python et Docker")
         self.assertEqual([p["mot_cle"] for p in coverage["presents"]], ["Python", "conteneurisation"])
+
+    def test_notion_flag_depends_only_on_where_the_term_is_displayed(self):
+        offer = OffreAnalyse.model_validate(analyse(competences_requises=["Docker", "SQL"], competences_souhaitees=[],
+                                                    mots_cles=[]))
+        coverage = cv_tailor.keyword_coverage(offer, "Langages : Python, SQL", "Docker, AWS")
+        self.assertEqual([(p["mot_cle"], p["notion"]) for p in coverage["presents"]], [("Docker", True), ("SQL", False)])
+        # Le même terme cité aussi ailleurs (ex. dans une puce) n'est plus « via notions ».
+        coverage = cv_tailor.keyword_coverage(offer, "Déploiement avec Docker. Langages : SQL", "Docker, AWS")
+        self.assertEqual([p["notion"] for p in coverage["presents"]], [False, False])
+
+    def test_communication_synonyms(self):
+        offer = OffreAnalyse.model_validate(analyse(competences_requises=["Communication"], competences_souhaitees=[],
+                                                    mots_cles=[]))
+        for text, via in (("Animation d’ateliers de formation", "animation d’ateliers"),
+                          ("Accompagnement et acculturation des équipes métier", "acculturation"),
+                          ("Qualités : esprit d'équipe", "esprit d’équipe")):
+            with self.subTest(text=text):
+                coverage = cv_tailor.keyword_coverage(offer, text)
+                self.assertEqual(coverage["presents"][0]["via"], via)
+        self.assertEqual(cv_tailor.keyword_coverage(offer, "Python")["absents"], ["Communication"])
 
     def test_experience_requested_is_reported_from_text(self):
         offer = OFFRE_FICTIVE.replace("2 ans d'expérience minimum", "5 ans d'expérience minimum, profil senior")

@@ -28,6 +28,8 @@ MAX_OFFRE_CARACTERES = 30000
 CONTRATS_RECHERCHES = ("CDI", "CDD", "these_cifre")
 OBJECTIFS_REQUIS = (*CONTRATS_RECHERCHES, "defaut")
 NIVEAUX = ("courant", "notions")
+# Rubrique affichée « Notions (Master) » : un mot-clé trouvé seulement là est signalé « via notions ».
+NOTIONS_CATEGORY = "notions_master"
 
 # Équivalences validées par le candidat, pour le rapport seulement : un mot-clé de l'offre est
 # couvert si le CV contient l'un des termes équivalents. Rien n'est ajouté au CV.
@@ -40,6 +42,8 @@ SYNONYMES = (
     (("big data", "gros volumes de données"), ("Spark",)),
     (("API",), ("API REST", "FastAPI")),
     (("IA générative",), ("LLM", "RAG")),
+    (("communication",), ("animation d’ateliers", "accompagnement des équipes métier", "acculturation",
+                          "esprit d’équipe")),
 )
 
 
@@ -330,11 +334,6 @@ def _contract_in_text(offer_text: str) -> str | None:
     return None
 
 
-def _same_skill(requested: str, known: str) -> bool:
-    a, b = _normalized(requested), _variants(known)
-    return any(a == v or f" {v} " in f" {a} " for v in b if len(v) > 2) or a in b
-
-
 def informations(analyse: OffreAnalyse, offer_text: str) -> list[str]:
     """Informations neutres : rien ici ne refuse, ne bloque ni ne déconseille une candidature."""
     infos = []
@@ -354,25 +353,22 @@ def informations(analyse: OffreAnalyse, offer_text: str) -> list[str]:
     return infos
 
 
-def keyword_coverage(analyse: OffreAnalyse, cv_text: str, master: dict) -> dict:
-    """Mots-clés de l'offre présents ou absents dans le texte du CV (notions comprises), directement
-    ou par un terme équivalent de SYNONYMES."""
-    skills = _skills(master)
-
-    def is_notion(term):
-        skill = next((s for s in skills.values() if _same_skill(term, s["nom"])), None)
-        return bool(skill and skill["niveau"] == "notions")
-
+def keyword_coverage(analyse: OffreAnalyse, main_text: str, notions_text: str = "") -> dict:
+    """Mots-clés de l'offre présents ou absents dans le texte affiché du CV, directement ou par un
+    terme équivalent de SYNONYMES. « notion » est vrai seulement si le mot-clé n'apparaît que dans
+    la ligne « Notions (Master) » (notions_text), et nulle part ailleurs (main_text)."""
     keywords = {}
     for keyword in analyse.competences_requises + analyse.competences_souhaitees + analyse.mots_cles:
         keywords.setdefault(_normalized(keyword), keyword)
     present, absent = [], []
     for keyword in keywords.values():
-        via = keyword if mentions(keyword, cv_text) else next(
-            (term for keys, terms in SYNONYMES if any(f" {_normalized(k)} " in f" {_normalized(keyword)} " for k in keys)
-             for term in terms if mentions(term, cv_text)), None)
-        if via:
-            present.append({"mot_cle": keyword, "via": via, "notion": is_notion(via)})
+        terms = [keyword, *(term for keys, terms in SYNONYMES
+                            if any(f" {_normalized(k)} " in f" {_normalized(keyword)} " for k in keys)
+                            for term in terms)]
+        found = next(((term, False) for term in terms if mentions(term, main_text)), None) \
+            or next(((term, True) for term in terms if mentions(term, notions_text)), None)
+        if found:
+            present.append({"mot_cle": keyword, "via": found[0], "notion": found[1]})
         else:
             absent.append(keyword)
     return {"presents": present, "absents": absent}
@@ -388,14 +384,14 @@ def accroche_text(master: dict, accroche_id: str, contract: str) -> str:
 
 
 def master_text(master: dict, accroche: str) -> str:
-    """Tout le texte affichable du CV complet (sans coordonnées), pour le rapport avant mise en page."""
+    """Tout le texte affichable du CV complet, hors coordonnées et hors « Notions (Master) »."""
     parts = [master.get("identite", {}).get("titre", ""), accroche]
     for exp in master["experiences"]:
         parts += [exp.get("poste", ""), exp.get("entreprise", ""), exp.get("service", "")]
         for project in exp.get("projets") or []:
             parts += [project["titre"], *(project.get("technologies") or []),
                       *(plain(a["texte"]) for a in project["accomplissements"])]
-    parts += list(_skills(master))
+    parts += [s["nom"] for s in _skills(master).values() if s["categorie"] != NOTIONS_CATEGORY]
     for item in master.get("formation") or []:
         parts += [item.get("diplome", ""), item.get("etablissement", ""), *(item.get("matieres") or [])]
     for cert in master.get("certifications") or []:
@@ -462,4 +458,6 @@ def tailor_cv(offer_text: str, *, master_path: Path = MASTER_PATH, settings=None
     return {"analyse": analyse.model_dump(), **cv,
             "rapport": {"informations": informations(analyse, offer_text),
                         # Avant mise en page ; build_cv_pdf recalcule sur le texte du PDF final.
-                        "mots_cles": keyword_coverage(analyse, master_text(master, cv["accroche"]["texte"]), master)}}
+                        "mots_cles": keyword_coverage(
+                            analyse, master_text(master, cv["accroche"]["texte"]),
+                            ", ".join(s["nom"] for s in master["competences"].get(NOTIONS_CATEGORY) or []))}}

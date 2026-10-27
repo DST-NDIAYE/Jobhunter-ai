@@ -17,7 +17,7 @@ from pathlib import Path
 import pymupdf
 
 from app.config import PROJECT_ROOT
-from app.cv_tailor import OffreAnalyse, keyword_coverage
+from app.cv_tailor import NOTIONS_CATEGORY, OffreAnalyse, keyword_coverage
 
 OUTPUT_DIR = PROJECT_ROOT / "output"
 MIN_PUCES_PAR_PROJET = 3
@@ -223,6 +223,20 @@ def pdf_text(pdf: bytes) -> str:
         return "\n".join(page.get_text() for page in document)
 
 
+def split_notions(text: str, cv: dict) -> tuple[str, str]:
+    """Sépare le texte du PDF en (tout sauf la ligne « Notions (Master) », contenu de cette ligne)."""
+    flat = " ".join(text.split())
+    label = CATEGORY_LABELS[NOTIONS_CATEGORY] + " :"
+    start = flat.find(label)
+    if start < 0:
+        return flat, ""
+    following = [CATEGORY_LABELS.get(g["categorie"], g["categorie"]) + " :" for g in cv["competences"]]
+    following += ["Certifications", "Langues"]
+    ends = [i for marker in following if (i := flat.find(marker, start + len(label))) >= 0]
+    end = min(ends, default=len(flat))
+    return flat[:start] + " " + flat[end:], flat[start + len(label):end]
+
+
 class ChromiumRenderer:
     """Convertit du HTML en PDF A4 avec Playwright ; un seul navigateur pour tous les essais."""
 
@@ -281,7 +295,7 @@ def build_cv_pdf(cv: dict, master: dict, output_dir: Path = OUTPUT_DIR, render=N
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / pdf_filename(cv, master)
     path.write_bytes(pdf)
-    # Rapport calculé sur tout le texte du PDF final, notions comprises.
-    coverage = keyword_coverage(OffreAnalyse.model_validate(cv["analyse"]), pdf_text(pdf), master)
+    # Rapport calculé sur ce qui est réellement affiché dans le PDF final.
+    coverage = keyword_coverage(OffreAnalyse.model_validate(cv["analyse"]), *split_notions(pdf_text(pdf), final))
     return {"path": path, "pages": page_count(pdf), **details,
             "puces_affichees": final["ordre_accomplissements"], "mots_cles": coverage}
