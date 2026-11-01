@@ -151,16 +151,52 @@ class RobotTests(unittest.TestCase):
                 self.assertTrue(etat["captures"][-1]["nom"].endswith("page-inattendue.png"))
                 self.assertEqual(self.candidatures(), [])
 
-    def test_several_documents_need_the_cv_name_setting(self):
+    def test_ambiguous_cv_choice_stops_and_asks_you_once(self):
         self.faux("/__test__/documents", noms=["CV_Camille_EXEMPLE.pdf", "Lettre_type.docx", "CV_Camille_EXEMPLE_Anglais.pdf"])
-        etat = self.lancer("essai")
-        self.assertEqual(etat["statut"], "arrete")
-        self.assertIn("Plusieurs documents", etat["resume"])
-        self.assertIn("Lettre_type (document DOCX)", etat["resume"])
-        sp.ecrire_reglages(self.db, {"nom_cv": "anglais"})
-        etat = self.lancer("essai")
+        self.faux("/__test__/scenario", siret=self.sirets[2], type="captcha")  # fin du parcours après deux entreprises
+        questions, decisions = [], set()
+
+        def pendant(etat):
+            if etat.get("attente") == "cv" and not questions:
+                questions.append([d["libelle"] for d in etat["documents"]])
+                with self.assertRaises(sp.SpontaneesError):
+                    robot.decider("cv", 3)  # numéro hors de la liste proposée
+                with self.assertRaises(sp.SpontaneesError):
+                    robot.decider("envoyee")  # le robot attend un choix de CV, pas une décision d'envoi
+                robot.decider("cv", 2)
+            elif etat.get("attente") == "decision" and etat.get("entreprise") not in decisions:
+                decisions.add(etat["entreprise"])
+                robot.decider("passer")
+        etat = self.lancer("assiste", pendant=pendant)
+        self.assertEqual(etat["statut"], "arrete", etat["journal"])
+        self.assertEqual(questions, [["CV_Camille_EXEMPLE (document PDF)", "Lettre_type (document DOCX)",
+                                      "CV_Camille_EXEMPLE_Anglais (document PDF)"]])  # une seule question
+        self.assertEqual(etat["compteurs"]["passees"], 2)
+        journal = "\n".join(etat["journal"])
+        self.assertIn("choix du CV ambigu, 3 documents dans votre espace, et aucun nom de CV dans Paramètres", journal)
+        self.assertEqual(journal.count("CV « CV_Camille_EXEMPLE_Anglais (document PDF) » coché"), 2)
+        self.assertEqual([c["nom"] for c in etat["captures"] if c["nom"].endswith("-cv-a-choisir.png")],
+                         ["02-exemplia-analytics-cv-a-choisir.png"])
+        self.assertEqual(self.candidatures(), [])
+
+    def test_cv_name_setting_exact_name_wins_and_unknown_name_asks(self):
+        self.faux("/__test__/documents", noms=["CV_Camille_EXEMPLE.pdf", "Lettre_type.docx", "CV_Camille_EXEMPLE_Anglais.pdf"])
+        sp.ecrire_reglages(self.db, {"nom_cv": "cv camille exemple"})  # contenu dans deux noms, exact pour un seul
+        attentes = []
+        etat = self.lancer("essai", pendant=lambda e: attentes.append(e.get("attente")))
         self.assertEqual(etat["statut"], "termine", etat["journal"])
-        self.assertIn("CV « CV_Camille_EXEMPLE_Anglais (document PDF) » coché", "\n".join(etat["journal"]))
+        self.assertNotIn("cv", attentes)
+        self.assertIn("CV « CV_Camille_EXEMPLE (document PDF) » coché", "\n".join(etat["journal"]))
+
+        sp.ecrire_reglages(self.db, {"nom_cv": "introuvable"})
+
+        def pendant(etat):
+            if etat.get("attente") == "cv":
+                robot.arreter_robot()
+        etat = self.lancer("essai", pendant=pendant)
+        self.assertEqual(etat["statut"], "arrete", etat["journal"])
+        self.assertIn("pendant le choix du CV : rien n'a été coché ni envoyé", etat["resume"])
+        self.assertIn("aucun document ne correspond au nom du CV « introuvable »", "\n".join(etat["journal"]))
         self.assertEqual(self.candidatures(), [])
 
     def test_automatic_sending_checks_the_summary_and_respects_the_daily_cap(self):
@@ -191,3 +227,44 @@ class RobotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChoixCvTests(unittest.TestCase):
+    """Règle de choix du CV, sans navigateur : le robot ne devine jamais."""
+
+    @staticmethod
+    def docs(*noms, detail=""):
+        return [{"id": f"doc-{i}-select", "nom": nom, "detail": detail} for i, nom in enumerate(noms)]
+
+    def test_a_single_document_is_used_without_a_name(self):
+        cv, _ = robot.choix_cv(self.docs("Mon_CV (document PDF)"))
+        self.assertEqual(cv["nom"], "Mon_CV (document PDF)")
+
+    def test_several_documents_without_a_name_always_ask(self):
+        for noms in (("CV_2024 (document PDF)", "Lettre (document PDF)"),  # un seul « CV » : pas de supposition
+                     ("CV_Data (document PDF)", "CV_IA (document PDF)")):
+            with self.subTest(noms=noms):
+                cv, raison = robot.choix_cv(self.docs(*noms))
+                self.assertIsNone(cv)
+                self.assertEqual(raison, "2 documents dans votre espace, et aucun nom de CV dans Paramètres")
+
+    def test_cv_name_exact_then_contained(self):
+        docs = self.docs("CV_Data (document PDF)", "CV_Data_Anglais (document PDF)", "Lettre (document DOCX)")
+        self.assertEqual(robot.choix_cv(docs, "cv data")[0]["nom"], "CV_Data (document PDF)")
+        self.assertEqual(robot.choix_cv(docs, "CV_Data.pdf")[0]["nom"], "CV_Data (document PDF)")
+        self.assertEqual(robot.choix_cv(docs, "anglais")[0]["nom"], "CV_Data_Anglais (document PDF)")
+        self.assertEqual(robot.choix_cv(docs, "CV"),
+                         (None, "2 documents correspondent au nom du CV « CV » (Paramètres)"))
+        self.assertEqual(robot.choix_cv(docs, "Portfolio"),
+                         (None, "aucun document ne correspond au nom du CV « Portfolio » (Paramètres)"))
+
+    def test_two_documents_with_the_same_name_ask_and_your_choice_is_kept(self):
+        docs = [{"id": "doc-0-select", "nom": "CV (document PDF)", "detail": "Date de mise en ligne : 01/09/2026"},
+                {"id": "doc-1-select", "nom": "CV (document PDF)", "detail": "Date de mise en ligne : 12/10/2026"}]
+        self.assertIsNone(robot.choix_cv(docs, "CV")[0])
+        self.assertIsNone(robot.choix_cv(docs)[0])
+        self.assertEqual(robot._libelle(docs[1], docs), "CV (document PDF) · Date de mise en ligne : 12/10/2026")
+        choisi = (docs[1]["nom"], docs[1]["detail"])
+        self.assertEqual(robot.choix_cv(docs, "CV", choisi)[0]["id"], "doc-1-select")
+        self.assertEqual(robot.choix_cv(docs[:1], "CV", choisi),
+                         (None, "le document choisi plus tôt (« CV (document PDF) ») n'est plus dans la liste"))

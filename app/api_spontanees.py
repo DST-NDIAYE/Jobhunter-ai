@@ -39,6 +39,7 @@ class RobotRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     action: str
+    document: int | None = None  # action « cv » : numéro du document à joindre
 
 
 def _erreur(exc: SpontaneesError) -> HTTPException:
@@ -125,7 +126,7 @@ def post_robot(req: RobotRequest):
 @spontanees_router.post("/robot/decision")
 def post_decision(req: DecisionRequest):
     try:
-        return decider(req.action)
+        return decider(req.action, req.document)
     except SpontaneesError as exc:
         raise _erreur(exc) from None
 

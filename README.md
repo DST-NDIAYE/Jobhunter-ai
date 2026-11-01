@@ -112,8 +112,17 @@ formulaire du site retire (emojis, %, #…).
 « Essai sur une entreprise » remplit un seul formulaire et n'envoie jamais rien. Le robot fait des pauses entre les
 actions, prend une capture d'écran à chaque étape, et s'arrête immédiatement sur un captcha (il n'en résout jamais)
 ou sur une page inattendue. Le journal et les captures s'affichent dans l'écran Spontanées et restent dans
-`output/robot/<date-heure>/` (`journal.txt`, images PNG). Si plusieurs documents sont présents sur La Bonne Boîte,
-indiquez le nom du CV à joindre dans Paramètres.
+`output/robot/<date-heure>/` (`journal.txt`, images PNG).
+
+**Choix du CV** parmi les documents de votre espace La Bonne Boîte (le robot ne téléverse jamais de fichier) :
+
+1. avec un « Nom du CV à joindre » dans Paramètres : le document de ce nom exact (accents, majuscules et extension
+   ignorés), sinon le seul document dont le nom contient ce texte ;
+2. sans ce nom : le document, s'il est seul dans votre espace.
+
+Dans tous les autres cas (aucun document ou plusieurs documents possibles, deux documents du même nom), le choix est
+ambigu : le robot ne devine pas. Il s'arrête sur le formulaire sans rien cocher, prend une capture et vous demande
+lequel joindre, dans l'écran Spontanées ou dans sa fenêtre. Votre choix vaut pour le reste de l'exécution.
 
 **Envoi automatique** (Paramètres) : désactivé par défaut. Activé, le robot clique lui-même sur « Continuer », vérifie
 la synthèse (message identique), envoie, puis exige la page de confirmation. Plafond : au plus 10 envois par jour

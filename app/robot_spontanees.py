@@ -4,6 +4,8 @@
   passe, et la session disparaît avec la fenêtre (navigateur neuf, rien n'est enregistré sur le disque).
 - Pour chaque entreprise du lot du jour : formulaire du site, CV déjà téléversé coché, message collé, puis arrêt
   avant l'envoi. Vous relisez et envoyez vous-même ; le robot n'envoie que si l'envoi automatique est activé.
+- Choix du CV (choix_cv) : si plusieurs documents de votre espace sont possibles, le robot ne devine pas ; il
+  s'arrête sur le formulaire et vous demande lequel joindre.
 - Au plus 10 entreprises par jour, pauses entre les actions, capture d'écran à chaque étape, arrêt immédiat en
   cas de captcha ou de page inattendue, journal lisible (journal.txt).
 
@@ -36,6 +38,7 @@ ROBOT_DIR = OUTPUT_DIR / "robot"
 RUN_ID = re.compile(r"\d{8}-\d{6}(?:-\d{1,2})?")
 CAPTURE = re.compile(r"\d{2,3}-[a-z0-9-]{1,60}\.png")
 ACTIONS = ("envoyee", "passer", "arreter")
+CHOIX_CV = re.compile(r"cv:(\d{1,2})")  # « joindre le document n° N », quand le choix du CV est ambigu
 _PROCESSUS: dict[str, subprocess.Popen] = {}
 
 
@@ -107,7 +110,7 @@ def etat_robot() -> dict:
                  "url": f"/api/spontanees/robot/captures/{run.name}/{c['nom']}"}
                 for c in etat.get("captures") or [] if isinstance(c, dict) and CAPTURE.fullmatch(str(c.get("nom")))]
     public = {k: etat.get(k) for k in ("mode", "envoi_automatique", "statut", "etape", "attente", "entreprise",
-                                       "debut", "fin", "resume", "compteurs", "fenetre_ouverte")}
+                                       "documents", "debut", "fin", "resume", "compteurs", "fenetre_ouverte")}
     return {**public, "actif": actif, "id": run.name, "journal": journal, "captures": captures}
 
 
@@ -155,15 +158,19 @@ def lancer_robot(settings, mode: str) -> dict:
     return etat_robot()
 
 
-def decider(action: str) -> dict:
-    """Votre décision pour le formulaire prêt : envoyée par vous, ou passée."""
-    if action not in ("envoyee", "passer"):
-        raise SpontaneesError("Décision inconnue : envoyée ou passer.")
+def decider(action: str, document: int | None = None) -> dict:
+    """Votre décision : formulaire envoyé par vous ou passé, ou bien le document à joindre (choix du CV ambigu)."""
+    if action not in ("envoyee", "passer", "cv"):
+        raise SpontaneesError("Décision inconnue : envoyée, passer ou cv.")
     run = _dernier()
     etat = (_lire(run / "etat.json", {}) or {}) if run else {}
-    if run is None or not _actif(run, etat) or etat.get("attente") != "decision":
-        raise SpontaneesError("Le robot n'attend pas de décision en ce moment.", 409)
-    _ecrire(run / "decision.json", {"action": action, "siret": etat.get("siret")})
+    attente = "cv" if action == "cv" else "decision"
+    if run is None or not _actif(run, etat) or etat.get("attente") != attente:
+        raise SpontaneesError("Le robot n'attend pas de choix de CV en ce moment." if action == "cv" else
+                              "Le robot n'attend pas de décision en ce moment.", 409)
+    if action == "cv" and not (type(document) is int and 0 <= document < len(etat.get("documents") or [])):
+        raise SpontaneesError("Document inconnu : choisissez l'un des documents proposés.")
+    _ecrire(run / "decision.json", {"action": action, "document": document, "siret": etat.get("siret")})
     return etat_robot()
 
 
@@ -196,17 +203,59 @@ def chemin_capture(run_id: str, nom: str) -> Path:
 
 # --- Côté robot : processus lancé par le serveur ----------------------------------------------------------------
 
+def _action_valide(action) -> bool:
+    return action in ACTIONS or bool(CHOIX_CV.fullmatch(str(action)))
+
+
 class ArretRobot(Exception):
     """Arrêt du robot (captcha, page inattendue, demande, délai) : message lisible pour le journal."""
 
 
 def _cle(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", (text or "").casefold())
-    return " ".join(re.sub(r"[^\w]+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).split())
+    return " ".join(re.sub(r"[\W_]+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).split())
 
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", _cle(text)).strip("-")[:40] or "entreprise"
+
+
+def _nom_document(nom: str) -> str:
+    """« CV_Data (document PDF) » ou « CV_Data.pdf » → « CV_Data »."""
+    return re.sub(r"\.[A-Za-z0-9]{2,4}$", "", re.sub(r"\s*\(document [^)]*\)\s*$", "", nom or "").strip())
+
+
+def choix_cv(documents: list[dict], nom_cv: str = "", choisi: tuple | None = None) -> tuple[dict | None, str]:
+    """Le document à joindre, ou (None, raison) quand le choix est ambigu : le robot ne devine jamais.
+
+    1. Document que vous avez choisi plus tôt dans cette exécution (même nom et mêmes détails), s'il est seul.
+    2. Sinon, avec un nom de CV dans Paramètres : le document de ce nom exact (accents, majuscules, tirets bas et
+       extension ignorés), sinon le seul document dont le nom contient ce texte.
+    3. Sinon, le seul document de votre espace.
+    Dans tous les autres cas (aucun ou plusieurs documents possibles), le robot vous demande.
+    """
+    if choisi:
+        trouves = [d for d in documents if (d["nom"], d.get("detail", "")) == tuple(choisi)]
+        if len(trouves) == 1:
+            return trouves[0], ""
+        return None, (f"le document choisi plus tôt (« {choisi[0]} ») " +
+                      ("n'est plus dans la liste" if not trouves else "apparaît plusieurs fois"))
+    if cle := _cle(_nom_document(nom_cv)):
+        exacts = [d for d in documents if _cle(_nom_document(d["nom"])) == cle]
+        trouves = exacts or [d for d in documents if cle in _cle(d["nom"])]
+        if len(trouves) == 1:
+            return trouves[0], ""
+        return None, (f"aucun document ne correspond au nom du CV « {nom_cv} » (Paramètres)" if not trouves else
+                      f"{len(trouves)} documents correspondent au nom du CV « {nom_cv} » (Paramètres)")
+    if len(documents) == 1:
+        return documents[0], ""
+    return None, f"{len(documents)} documents dans votre espace, et aucun nom de CV dans Paramètres"
+
+
+def _libelle(document: dict, documents: list[dict]) -> str:
+    """Nom du document, avec ses détails (date de mise en ligne…) si un autre porte le même nom."""
+    homonyme = sum(d["nom"] == document["nom"] for d in documents) > 1
+    return document["nom"] + (f" · {document['detail']}" if homonyme and document.get("detail") else "")
 
 
 def _invisible() -> bool:
@@ -233,7 +282,8 @@ CAPTCHA_JS = """() => {
 DOCUMENTS_JS = """() => [...document.querySelectorAll('app-document-selection input[type=checkbox]')].map((cb) => {
   const label = cb.id ? document.querySelector('label[for="' + cb.id + '"]') : null;
   const nom = label && (label.querySelector('.font-extrabold') || label);
-  return { id: cb.id, nom: nom ? nom.innerText.trim() : '', coche: cb.checked };
+  const detail = label ? [...label.querySelectorAll('small')].map((s) => s.innerText.trim()).filter(Boolean).join(' · ') : '';
+  return { id: cb.id, nom: nom ? nom.innerText.trim() : '', detail, coche: cb.checked };
 })"""
 
 BANDEAU_JS = """({ texte, boutons, cache }) => {
@@ -264,7 +314,7 @@ BANDEAU_JS = """({ texte, boutons, cache }) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    const main = action === 'envoyee';
+    const main = action === 'envoyee' || action.startsWith('cv:');
     btn.style.cssText = 'font:inherit;font-weight:600;border:0;border-radius:8px;padding:8px 12px;cursor:pointer;'
       + (main ? 'background:#2952cc;color:#fff' : 'background:#fff;color:#1b1f24');
     btn.addEventListener('click', () => window.__jobhunterDecision && window.__jobhunterDecision(action));
@@ -284,6 +334,7 @@ class Robot:
         self.etat = _lire(dossier / "etat.json", {}) or {}
         self.captures, self.n_captures = [], 0
         self.decision_bandeau = None
+        self.cv_choisi = None  # (nom, détails) du document que vous avez choisi, gardé pour toute l'exécution
         self.page = None
         self.rapide = fake_ft_enabled()
         self.delais = ({"connexion": 90, "decision": 90, "fenetre": 2, "page": 15} if self.rapide else
@@ -321,7 +372,7 @@ class Robot:
         self._bandeau(texte, boutons)
 
     def _bouton(self, source, action) -> None:
-        if action in ACTIONS:
+        if _action_valide(action):
             self.decision_bandeau = action
 
     # Arrêt, décisions, pauses
@@ -336,9 +387,10 @@ class Robot:
         action, self.decision_bandeau = self.decision_bandeau, None
         fichier = self.dossier / "decision.json"
         if action is None and fichier.exists():
-            action = (_lire(fichier, {}) or {}).get("action")
+            decision = _lire(fichier, {}) or {}
+            action = f"cv:{decision.get('document')}" if decision.get("action") == "cv" else decision.get("action")
             fichier.unlink(missing_ok=True)
-        return action if action in ACTIONS else None
+        return action if _action_valide(action) else None
 
     def attendre(self, secondes: float) -> None:
         fin = time.monotonic() + secondes
@@ -459,30 +511,50 @@ class Robot:
             raise ArretRobot(f"Page inattendue : le formulaire ne mentionne pas {nom}. Arrêt, rien n'a été envoyé "
                              f"(capture {capture}).")
 
-    def choisir_cv(self, documents: list[dict]) -> dict:
-        noms = " ; ".join(d["nom"] for d in documents)
-        if cle := _cle(self.travail["nom_cv"]):
-            choix = [d for d in documents if cle in _cle(d["nom"])]
-            if len(choix) == 1:
-                return choix[0]
-            raise ArretRobot(f"Aucun document ne correspond au CV « {self.travail['nom_cv']} » ({noms}) : "
-                             "corrigez le nom du CV dans Paramètres." if not choix else
-                             f"Plusieurs documents correspondent au CV « {self.travail['nom_cv']} » ({noms}) : "
-                             "précisez le nom du CV dans Paramètres.")
-        if len(documents) == 1:
-            return documents[0]
-        cvs = [d for d in documents if re.search(r"(?<![a-z])cv(?![a-z])", _cle(d["nom"]))]
-        if len(cvs) == 1:
-            return cvs[0]
-        raise ArretRobot(f"Plusieurs documents sur La Bonne Boîte ({noms}) : indiquez le nom du CV à joindre "
-                         "dans Paramètres, puis relancez.")
+    def demander_cv(self, nom: str, documents: list[dict], raison: str) -> None:
+        """Choix du CV ambigu : le robot s'arrête sur le formulaire, sans rien cocher, et vous demande."""
+        liste = " ; ".join(_libelle(d, documents) for d in documents)
+        capture = self.capturer(_slug(nom) + "-cv-a-choisir", f"{nom} · choix du CV demandé", pleine_page=True)
+        self.noter(f"{nom} : choix du CV ambigu, {raison} ({liste}). Le robot ne coche rien et attend votre choix, "
+                   f"dans JobHunter ou dans sa fenêtre (capture {capture}).")
+        self.ecrire_etat(attente="cv", documents=[{"nom": d["nom"], "libelle": _libelle(d, documents)} for d in documents],
+                         etape=f"{nom} : quel document joindre ? Le robot attend votre choix.")
+        texte = f"Choix du CV ambigu ({raison}) : quel document joindre à la candidature ?"
+        boutons = [(f"cv:{i}", f"Joindre « {_libelle(d, documents)} »") for i, d in enumerate(documents)]
+        fin = time.monotonic() + self.delais["decision"]
+        while time.monotonic() < fin:
+            action = self.lire_decision()
+            if action == "arreter":
+                raise ArretRobot("Arrêt demandé pendant le choix du CV : rien n'a été coché ni envoyé.")
+            if action and (choix := CHOIX_CV.fullmatch(action)) and int(choix[1]) < len(documents):
+                document = documents[int(choix[1])]
+                self.cv_choisi = (document["nom"], document.get("detail", ""))
+                self.ecrire_etat(attente=None, documents=None)
+                self.noter(f"Vous avez choisi « {_libelle(document, documents)} » : ce document sera joint pour la suite "
+                           "de cette exécution. Pour ne plus avoir à choisir, indiquez son nom dans Paramètres "
+                           "(Nom du CV à joindre).")
+                return
+            if self.etat_page() == "connexion":
+                raise ArretRobot("La session France Travail s'est terminée pendant le choix du CV : relancez le robot "
+                                 "et reconnectez-vous. Rien n'a été envoyé.")
+            self.bandeau(texte, boutons + [("arreter", "Arrêter le robot")])
+            self.page.wait_for_timeout(700)
+        raise ArretRobot(f"Aucun choix de CV depuis {self.delais['decision'] // 60 or 1} min pour {nom} : le robot "
+                         "s'arrête, rien n'a été coché ni envoyé.")
 
     def cocher_cv(self, nom: str) -> str:
         if self.page.locator("#no-documents").count():
             raise ArretRobot("Aucun document dans votre espace La Bonne Boîte : ajoutez votre CV dans « Vos documents » "
                              "sur La Bonne Boîte, puis relancez. Le robot ne téléverse jamais de fichier.")
         documents = self.page.evaluate(DOCUMENTS_JS)
-        cv = self.choisir_cv(documents)
+        cv, raison = choix_cv(documents, self.travail["nom_cv"], self.cv_choisi)
+        if cv is None:
+            self.demander_cv(nom, documents, raison)
+            documents = self.page.evaluate(DOCUMENTS_JS)  # relus : la page a pu changer pendant votre choix
+            cv, raison = choix_cv(documents, self.travail["nom_cv"], self.cv_choisi)
+            if cv is None:
+                raise ArretRobot(f"Les documents ont changé pendant votre choix pour {nom} ({raison}) : arrêt, "
+                                 "rien n'a été coché ni envoyé.")
         case = self.page.locator(f'input[id="{cv["id"]}"]')
         try:
             case.check(timeout=5000)

@@ -71,6 +71,8 @@
     .alert { border-radius: 8px; padding: 12px 14px; border: 1px solid; }
     .alert.error { background: var(--danger-soft); border-color: #f4c7c3; color: var(--danger); }
     .alert.warn { background: var(--warn-soft); border-color: #f2d9a8; color: var(--warn); }
+    .choix-cv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 12px; justify-items: start; }
+    .choix-cv .btn { text-align: left; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
     .alert.info { background: var(--accent-soft); border-color: #d3dcf8; color: #1d3c99; }
     .alert ul { margin: 6px 0 0; padding-left: 18px; }
     .empty { text-align: center; color: var(--muted); padding: 48px 24px; }
@@ -412,6 +414,15 @@
                 <button class="btn" :disabled="robot.deciding" @click="decide('passer')">Passer</button>
               </div>
             </div>
+            <div v-if="robot.data.attente === 'cv'" class="alert warn" role="alert" style="margin-top:14px">
+              Choix du CV ambigu pour <strong>{{ robot.data.entreprise }}</strong> : plusieurs documents de votre espace
+              La Bonne Boîte sont possibles. Le robot n'a rien coché et attend : lequel joindre ?
+              <div class="choix-cv">
+                <button v-for="(d, i) in robot.data.documents || []" :key="i" class="btn" :disabled="robot.deciding"
+                        @click="decide('cv', i)">Joindre « {{ d.libelle }} »</button>
+              </div>
+              <div style="margin-top:10px">Pour ne plus avoir à choisir, indiquez le nom du CV dans Paramètres.</div>
+            </div>
             <div v-if="robot.data.statut && robot.data.statut !== 'en_cours'"
                  :class="['alert', robot.data.statut === 'termine' ? 'info' : 'warn']" style="margin-top:14px">
               {{ robot.data.resume }}</div>
@@ -585,6 +596,8 @@
           <div>
             <label for="nomcv">Nom du CV à joindre <span class="hint">facultatif</span></label>
             <input id="nomcv" type="text" v-model="settings.form.nom_cv" placeholder="Utile si plusieurs documents sur La Bonne Boîte">
+            <div class="sub" style="margin-top:6px">Sans ce nom, ou s'il ne désigne pas un seul document, le robot vous
+              demande lequel joindre.</div>
           </div>
         </div>
         <div class="row" style="margin-top:18px">
@@ -832,9 +845,9 @@
         catch (e) { robot.error = e.message; } finally { robot.starting = false; }
       }
 
-      async function decide(action) {
+      async function decide(action, document) {
         robot.deciding = true; robot.error = '';
-        try { setRobot(await api('/api/spontanees/robot/decision', { method: 'POST', body: JSON.stringify({ action }) })); }
+        try { setRobot(await api('/api/spontanees/robot/decision', { method: 'POST', body: JSON.stringify({ action, document }) })); }
         catch (e) { robot.error = e.message; } finally { robot.deciding = false; }
       }
 
