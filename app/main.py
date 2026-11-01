@@ -8,9 +8,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
+from app.api_spontanees import spontanees_router
 from app.config import PROJECT_ROOT
 from app.database import init_db
 from app.france_travail import FranceTravailError
+from app.spontanees import SpontaneesError
 
 FRONTEND = PROJECT_ROOT / "frontend"
 
@@ -26,7 +28,9 @@ app = FastAPI(
     version="0.2.0",
     description=(
         "Recherche d'offres France Travail classées selon le CV maître, CV et lettre adaptés à chaque offre, "
-        "suivi des candidatures. Aucune candidature ni aucun e-mail n'est envoyé automatiquement."
+        "candidatures spontanées La Bonne Boîte (lot du jour, robot assisté), suivi des candidatures. Aucun e-mail "
+        "n'est envoyé ; aucune candidature non plus, sauf par le robot si vous activez l'envoi automatique "
+        "(désactivé par défaut)."
     ),
     lifespan=lifespan,
 )
@@ -34,6 +38,11 @@ app = FastAPI(
 
 @app.exception_handler(FranceTravailError)
 async def france_travail_error_handler(request: Request, exc: FranceTravailError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
+
+@app.exception_handler(SpontaneesError)
+async def spontanees_error_handler(request: Request, exc: SpontaneesError):
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
@@ -46,6 +55,7 @@ async def database_error_handler(request: Request, exc: sqlite3.Error):
 
 
 app.include_router(api_router)
+app.include_router(spontanees_router)
 if FRONTEND.is_dir():
     app.mount("/frontend", StaticFiles(directory=FRONTEND), name="frontend")
 

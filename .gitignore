@@ -20,3 +20,5 @@ token*.json
 cv_master.yaml
 output/
 kits/
+# Modèle personnel du message de candidature spontanée (peut contenir votre nom) ; l’exemple est versionné.
+modele_message_spontane.txt

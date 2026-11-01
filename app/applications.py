@@ -8,6 +8,9 @@ import sqlite3
 
 from app.database import _database_path, _decode_job, _identity
 from app.opportunities import entity_table, decode_opportunity
+from app.spontanees import RELANCE_APRES as RELANCE_SPONTANEE, STATUTS_APRES_ENVOI, url_entreprise
+
+SPONTANEE = "spontanee"  # source des candidatures spontanées dans le suivi (identifiant : SIRET)
 
 APPLICATION_STATUSES = (
     "Nouvelle", "À étudier", "À postuler", "Candidature préparée",
@@ -111,12 +114,13 @@ RELANCE_APRES = timedelta(days=7)
 STATUTS_CLOS = ("Entretien", "Refus", "Archivée")
 
 
-def _relance(status: str | None, sent_at: str | None, now: datetime) -> tuple[str | None, bool]:
-    """Date de relance (envoi + 7 jours) et relance conseillée si la date est passée."""
+def _relance(status: str | None, sent_at: str | None, now: datetime,
+             delay: timedelta = RELANCE_APRES) -> tuple[str | None, bool]:
+    """Date de relance (envoi + 7 jours, 10 pour une candidature spontanée) et relance conseillée si elle est passée."""
     if status != "Candidature envoyée" or not sent_at:
         return None, False
     try:
-        due = datetime.fromisoformat(sent_at.replace("Z", "+00:00")) + RELANCE_APRES
+        due = datetime.fromisoformat(sent_at.replace("Z", "+00:00")) + delay
     except ValueError:
         return None, False
     if due.tzinfo is None:
@@ -125,7 +129,8 @@ def _relance(status: str | None, sent_at: str | None, now: datetime) -> tuple[st
 
 
 def tracked_applications(db_path=None, now: datetime | None = None) -> list[dict]:
-    """Candidatures réelles : offres ayant un statut, et opportunités La Bonne Boîte (lecture seule)."""
+    """Candidatures réelles : offres ayant un statut, candidatures spontanées envoyées, et opportunités
+    La Bonne Boîte de l'ancien module (lecture seule)."""
     now = now or datetime.now(timezone.utc)
     rows = []
     with closing(sqlite3.connect(_database_path(db_path))) as connection:
@@ -147,6 +152,14 @@ def tracked_applications(db_path=None, now: datetime | None = None) -> list[dict
                          "poste": row["job_keyword"] or "", "statut": row["application_status"] or "",
                          "date_envoi": row["application_sent_at"], "date": row["application_sent_at"] or row["status_updated_at"],
                          "url": row["application_url"] or row["source_url"], "lecture_seule": True})
+        for row in connection.execute(
+            "SELECT siret, entreprise, metier, statut, envoyee_le, statut_le FROM spontanees WHERE envoyee_le IS NOT NULL"
+        ):
+            rows.append({"source": SPONTANEE, "external_id": row["siret"], "entreprise": row["entreprise"],
+                         "poste": f"Candidature spontanée · {row['metier']}", "statut": row["statut"],
+                         "date_envoi": row["envoyee_le"], "date": row["envoyee_le"] or row["statut_le"],
+                         "url": url_entreprise(row["siret"]), "lecture_seule": False, "statuts": list(STATUTS_APRES_ENVOI)})
     for item in rows:
-        item["relance_le"], item["relance_conseillee"] = _relance(item["statut"], item["date_envoi"], now)
+        delay = RELANCE_SPONTANEE if item["source"] == SPONTANEE else RELANCE_APRES
+        item["relance_le"], item["relance_conseillee"] = _relance(item["statut"], item["date_envoi"], now, delay)
     return sorted(rows, key=lambda r: r["date"] or "", reverse=True)

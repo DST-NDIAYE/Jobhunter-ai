@@ -1,7 +1,7 @@
 """Routes REST de JobHunter AI : état, recherche France Travail, préparation d'une candidature, suivi.
 
-Aucune route n'envoie de candidature ni d'e-mail. Seuls les fichiers générés pour le candidat (CV, lettre)
-contiennent ses coordonnées ; aucune route ne renvoie de secret.
+Aucune route n'envoie de candidature ni d'e-mail (candidatures spontanées : voir api_spontanees). Seuls les
+fichiers générés pour le candidat (CV, lettre) contiennent ses coordonnées ; aucune route ne renvoie de secret.
 """
 
 import json
@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.application_channels import extract_contact_emails, safe_url
-from app.applications import APPLICATION_STATUSES, get_offer, save_notes, tracked_applications, update_status
+from app.applications import (APPLICATION_STATUSES, SPONTANEE, get_offer, save_notes, tracked_applications,
+                              update_status)
 from app.config import PROJECT_ROOT, get_settings
 from app.cover_letter import LetterError, build_letter_files, generate_letter, letter_parts, letter_text
 from app.cv_pdf import OUTPUT_DIR, build_cv_pdf, write_preview
@@ -21,6 +22,7 @@ from app.database import add_job
 from app.france_travail import search_jobs
 from app.llm import resolve_provider
 from app.matching import calculate_match_score, cv_text_from_master
+from app.spontanees import changer_statut, marquer_envoyee
 from app.test_mode import fake_ft_enabled, fake_search_jobs
 
 api_router = APIRouter(prefix="/api")
@@ -258,27 +260,36 @@ def _editable(source: str, external_id: str, db_path) -> dict:
     return offer
 
 
+def _tracked(db_path, source: str, external_id: str) -> dict | None:
+    return next((r for r in tracked_applications(db_path) if r["source"] == source and r["external_id"] == external_id),
+                None)
+
+
 @api_router.patch("/applications/{source}/{external_id}")
 def update_application(source: str, external_id: str, req: StatusUpdateRequest):
     db_path = get_settings().database_path
+    if source == SPONTANEE:  # suite d'une candidature spontanée envoyée (entretien, refus…)
+        changer_statut(db_path, external_id, req.status)
+        return {"ok": True, "item": _tracked(db_path, source, external_id)}
     _editable(source, external_id, db_path)
     if req.status not in APPLICATION_STATUSES:
         raise HTTPException(status_code=400, detail=f"Statut inconnu : {req.status}")
     update_status([(source, external_id)], req.status, db_path=db_path)
     if req.personal_notes is not None:
         save_notes(external_id, req.personal_notes, source=source, db_path=db_path)
-    return {"ok": True, "item": next((r for r in tracked_applications(db_path)
-                                      if r["source"] == source and r["external_id"] == external_id), None)}
+    return {"ok": True, "item": _tracked(db_path, source, external_id)}
 
 
 @api_router.post("/applications/{source}/{external_id}/postule")
 def mark_as_applied(source: str, external_id: str):
     """Marque la candidature comme envoyée (par le candidat lui-même) : date du jour et relance à 7 jours."""
     db_path = get_settings().database_path
+    if source == SPONTANEE:
+        marquer_envoyee(db_path, external_id, par="vous")
+        return {"ok": True, "item": _tracked(db_path, source, external_id)}
     _editable(source, external_id, db_path)
     update_status([(source, external_id)], "Candidature envoyée", db_path=db_path)
-    return {"ok": True, "item": next(r for r in tracked_applications(db_path)
-                                     if r["source"] == source and r["external_id"] == external_id)}
+    return {"ok": True, "item": _tracked(db_path, source, external_id)}
 
 
 @api_router.get("/gmail/status")

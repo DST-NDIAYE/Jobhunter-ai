@@ -48,13 +48,14 @@
 
     label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
     .hint { color: var(--muted); font-size: 13px; font-weight: 400; }
-    input[type=text], input[type=url], select, textarea {
+    input[type=text], input[type=url], input[type=number], select, textarea {
       width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fff; }
     textarea { min-height: 240px; resize: vertical; }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
     .field + .field { margin-top: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
     .form-row { display: grid; grid-template-columns: 2fr 1.4fr 1fr auto; gap: 12px; align-items: end; }
+    .form-row.two { grid-template-columns: minmax(0, 420px) auto; justify-content: start; }
     .check { display: flex; gap: 8px; align-items: center; font-weight: 400; color: var(--muted); margin-top: 14px; }
 
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;
@@ -93,6 +94,16 @@
     .letter { white-space: pre-wrap; font-family: var(--font); font-size: 14px; line-height: 1.6; max-height: 640px;
               overflow: auto; background: var(--bg); border-radius: 8px; padding: 18px; margin: 0; }
     img.preview { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    .message-repli { margin-top: 12px; }
+    .message-repli summary { cursor: pointer; color: var(--accent); font-weight: 550; font-size: 14px; width: fit-content; }
+    .letter.message { max-height: 340px; margin-top: 10px; }
+    .journal { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.6;
+               white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border-radius: 8px; padding: 14px;
+               margin: 0; max-height: 300px; overflow: auto; }
+    .captures { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+    .capture { display: block; text-decoration: none; color: var(--muted); font-size: 13px; }
+    .capture img { display: block; width: 100%; height: 120px; object-fit: cover; object-position: top;
+                   border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-bottom: 6px; }
     .success { color: var(--ok); font-weight: 600; }
 
     table { width: 100%; border-collapse: collapse; }
@@ -110,7 +121,7 @@
     .state-ok { color: var(--ok); font-weight: 600; white-space: nowrap; }
     .state-off { color: var(--danger); font-weight: 600; white-space: nowrap; }
     code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; background: var(--bg);
-           padding: 2px 6px; border-radius: 6px; }
+           padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
     .fallback { max-width: 640px; margin: 80px auto; padding: 0 24px; color: var(--muted); }
 
     @media (max-width: 760px) {
@@ -119,7 +130,8 @@
       main { padding: 24px 16px 64px; }
       h1 { font-size: 22px; }
       .card { padding: 18px; }
-      .grid-3, .grid-2, .form-row { grid-template-columns: 1fr; }
+      .grid-3, .grid-2, .form-row, .form-row.two { grid-template-columns: 1fr; }
+      .captures { grid-template-columns: repeat(2, 1fr); }
       nav { flex-wrap: wrap; overflow-x: visible; }
       nav a { padding: 6px 10px; }
       .offer-head { flex-direction: column; gap: 4px; }
@@ -130,6 +142,10 @@
       td { border: 0; padding: 4px 0; }
       td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); }
       td select { min-width: 0; }
+      table.compact td { padding: 1px 0; }
+      table.compact td[data-label]::before { display: inline; margin-right: 6px; }
+      table.compact td .sub { display: inline; margin-left: 4px; }
+      .row .btn { padding: 9px 12px; }
     }
   </style>
 </head>
@@ -324,12 +340,156 @@
       </template>
     </section>
 
-    <!-- 3. Suivi -->
+    <!-- 3. Candidatures spontanées -->
+    <section v-if="view === 'spontanees'" class="stack">
+      <div>
+        <h1>Candidatures spontanées</h1>
+        <p class="lead">Chaque jour, au plus {{ spont.data ? spont.data.plafond_max : 10 }} entreprises Data, ML et IA
+          trouvées par La Bonne Boîte, joignables par son formulaire et jamais contactées. Le message vient de votre
+          modèle de texte, pas du modèle de langage.</p>
+      </div>
+      <div v-if="spont.error" class="alert error" role="alert">{{ spont.error }}</div>
+      <div v-if="spont.loading && !spont.data" class="card loading" role="status"><span class="spinner"></span>Chargement…</div>
+      <template v-else-if="spont.data">
+        <div class="card">
+          <div class="offer-head">
+            <h2 style="margin:0">Lot du {{ fmtDate(spont.data.date) }}</h2>
+            <span v-if="spont.data.lot.length" class="meta">{{ spont.data.zone }} · {{ sentCount }} sur {{ spont.data.lot.length }} envoyée(s)</span>
+          </div>
+          <p class="sub" style="margin:8px 0 0">Modèle du message : <code>{{ spont.data.modele.chemin }}</code>, à modifier
+            librement (champs <code>{entreprise}</code>, <code>{ville}</code>, <code>{secteur}</code> ; ajoutez-y votre signature).</p>
+          <div v-for="p in spont.data.modele.problemes" :key="p" class="alert error" style="margin-top:14px" role="alert">{{ p }}</div>
+          <form v-if="!spont.data.lot.length" @submit.prevent="buildBatch" style="margin-top:20px">
+            <div class="form-row two">
+              <div>
+                <label for="spont-city">Ville <span class="hint">facultatif, 30 km autour</span></label>
+                <input id="spont-city" type="text" v-model="spont.ville" placeholder="France entière">
+              </div>
+              <button class="btn primary" type="submit" :disabled="spont.building">Constituer le lot du jour</button>
+            </div>
+            <p class="sub" style="margin:12px 0 0">Métiers : data science, intelligence artificielle, data engineering
+              et data analyse. Exclues : les entreprises déjà proposées, et les {{ spont.data.anciennes_contactees }}
+              entreprises contactées ou tentées par l'ancien module.</p>
+          </form>
+          <div v-if="spont.building" class="loading" role="status"><span class="spinner"></span>Recherche des entreprises sur La Bonne Boîte…</div>
+          <div v-if="spont.buildError" class="alert error" style="margin-top:14px" role="alert">{{ spont.buildError }}</div>
+          <div v-if="spont.empty && !spont.data.lot.length" class="alert info" style="margin-top:14px">
+            Aucune entreprise joignable par le formulaire et jamais contactée pour cette recherche : essayez une autre
+            ville, ou la France entière.</div>
+        </div>
+
+        <div class="card">
+          <div class="offer-head">
+            <h2 style="margin:0">Robot assisté</h2>
+            <span class="meta">{{ spont.data.reglages.envoi_automatique
+              ? 'Envoi automatique activé, au plus ' + spont.data.reglages.plafond_par_jour + ' par jour'
+              : 'Envoi automatique désactivé' }}</span>
+          </div>
+          <p class="sub" style="margin:8px 0 16px">Une fenêtre de navigateur s'ouvre : vous vous connectez vous-même avec
+            France Travail (aucun mot de passe dans l'application, aucune session conservée). Pour chaque entreprise du
+            lot, le robot coche votre CV déjà téléversé sur La Bonne Boîte et colle le message, puis s'arrête avant
+            l'envoi : vous relisez et envoyez vous-même. Au plus {{ spont.data.reglages.plafond_par_jour }} envois par
+            jour, une capture à chaque étape, arrêt immédiat en cas de captcha ou de page inattendue.
+            « Essai » remplit le formulaire d'une seule entreprise et n'envoie jamais rien.</p>
+          <div class="row">
+            <button class="btn" :disabled="robotBusy || !hasToSend" @click="startRobot('essai')">Essai sur une entreprise</button>
+            <button class="btn primary" :disabled="robotBusy || !hasToSend" @click="startRobot('assiste')">Lancer le robot</button>
+            <button v-if="robot.data && robot.data.actif" class="btn" :disabled="robot.stopping" @click="stopRobot">
+              {{ robot.data.fenetre_ouverte ? 'Fermer la fenêtre du robot' : 'Arrêter le robot' }}</button>
+          </div>
+          <p v-if="!hasToSend && !robotBusy" class="sub" style="margin:10px 0 0">Constituez le lot du jour pour lancer le robot.</p>
+          <div v-if="robot.error" class="alert error" style="margin-top:14px" role="alert">{{ robot.error }}</div>
+          <template v-if="robot.data && robot.data.id">
+            <div v-if="robot.data.actif && robot.data.statut === 'en_cours' && !robot.data.attente" class="loading" role="status">
+              <span class="spinner"></span>{{ robot.data.etape }}</div>
+            <div v-if="robot.data.attente === 'connexion'" class="alert info">
+              Connectez-vous avec France Travail dans la fenêtre du robot : il attend votre connexion.</div>
+            <div v-if="robot.data.attente === 'decision'" class="alert info">
+              Formulaire prêt pour <strong>{{ robot.data.entreprise }}</strong> : relisez-le dans la fenêtre du robot et
+              envoyez-le vous-même, ou passez.
+              <div class="row" style="margin-top:12px">
+                <button class="btn primary" :disabled="robot.deciding" @click="decide('envoyee')">J'ai envoyé cette candidature</button>
+                <button class="btn" :disabled="robot.deciding" @click="decide('passer')">Passer</button>
+              </div>
+            </div>
+            <div v-if="robot.data.statut && robot.data.statut !== 'en_cours'"
+                 :class="['alert', robot.data.statut === 'termine' ? 'info' : 'warn']" style="margin-top:14px">
+              {{ robot.data.resume }}</div>
+            <p v-if="robot.data.actif && robot.data.fenetre_ouverte" class="sub" style="margin:10px 0 0">
+              La fenêtre du robot reste ouverte pour relire la page : fermez-la pour relancer le robot.</p>
+            <h3 style="margin-top:22px">Journal</h3>
+            <pre class="journal">{{ robot.data.journal.join('\n') || 'Aucune ligne pour l’instant.' }}</pre>
+            <template v-if="robot.data.captures.length">
+              <h3 style="margin-top:22px">Captures ({{ robot.data.captures.length }})</h3>
+              <div class="captures">
+                <a v-for="c in robot.data.captures" :key="c.nom" class="capture" :href="c.url" target="_blank" rel="noopener noreferrer">
+                  <img :src="c.url" :alt="c.legende" loading="lazy">{{ c.legende }}</a>
+              </div>
+            </template>
+          </template>
+        </div>
+
+        <article v-for="e in spont.data.lot" :key="e.siret" class="card offer">
+          <div class="offer-head">
+            <h2 style="margin:0">{{ e.entreprise }}</h2>
+            <span class="tag">{{ e.metier }}</span>
+          </div>
+          <div class="meta">{{ [e.ville, e.secteur].filter(Boolean).join(' · ') }}</div>
+          <template v-if="e.message">
+            <div v-for="p in e.message.problemes" :key="p" class="alert warn" style="margin-top:12px">{{ p }}</div>
+            <p v-if="e.message.retires.length" class="sub" style="margin:12px 0 0">Caractères retirés, refusés par
+              La Bonne Boîte : {{ e.message.retires.join(' ') }}</p>
+            <details v-if="e.message.texte" class="message-repli">
+              <summary>Voir le message ({{ e.message.texte.length }} caractères)</summary>
+              <pre class="letter message">{{ e.message.texte }}</pre>
+            </details>
+          </template>
+          <div class="row" style="margin-top:16px">
+            <button class="btn" :disabled="!e.message || !e.message.texte" @click="copyMessage(e)">
+              {{ spont.copied[e.siret] ? 'Message copié' : 'Copier le message' }}</button>
+            <a class="btn primary" :href="e.url_entreprise" target="_blank" rel="noopener noreferrer">Ouvrir l'entreprise</a>
+            <button class="btn" :disabled="!!e.envoyee_le || spont.marking[e.siret]" @click="markSent(e)">
+              {{ spont.marking[e.siret] ? 'Enregistrement…' : 'Marquer comme envoyée' }}</button>
+          </div>
+          <p v-if="e.envoyee_le" class="success" style="margin:14px 0 0">
+            Envoyée le {{ fmtDate(e.envoyee_le) }}{{ e.envoyee_par === 'robot' ? ' par le robot' : '' }}<template
+            v-if="e.relance_le"> · relance prévue le {{ fmtDate(e.relance_le) }}</template></p>
+          <p v-else-if="e.statut !== 'À envoyer'" class="meta" style="margin:14px 0 0">{{ e.statut }}</p>
+          <p v-if="e.robot_note" class="sub" style="margin:8px 0 0">Robot : {{ e.robot_note }}</p>
+          <div v-if="spont.markError[e.siret]" class="alert error" style="margin-top:14px">{{ spont.markError[e.siret] }}</div>
+          <div v-if="spont.copyError[e.siret]" class="alert error" style="margin-top:14px">{{ spont.copyError[e.siret] }}</div>
+        </article>
+
+        <div class="card" style="padding:8px 16px 16px">
+          <h2 style="margin:12px 0 4px">Historique</h2>
+          <table v-if="spont.data.historique.length" class="compact">
+            <thead><tr><th>Entreprise</th><th>Ville</th><th>Proposée le</th><th>Statut</th><th>Relance</th></tr></thead>
+            <tbody>
+              <tr v-for="h in spont.data.historique" :key="h.siret">
+                <td data-label="Entreprise">{{ h.entreprise }}<div class="tag">{{ h.metier }}</div></td>
+                <td data-label="Ville">{{ h.ville || '—' }}</td>
+                <td data-label="Proposée le">{{ fmtDate(h.lot_du) }}</td>
+                <td data-label="Statut">{{ h.statut }}<div v-if="h.envoyee_le" class="sub">le {{ fmtDate(h.envoyee_le) }}{{
+                  h.envoyee_par === 'robot' ? ' par le robot' : '' }}</div></td>
+                <td data-label="Relance">
+                  <span v-if="h.relance_conseillee" class="relance">Relance conseillée</span>
+                  <span v-else-if="h.relance_le">le {{ fmtDate(h.relance_le) }}</span>
+                  <span v-else class="sub">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="sub" style="margin:8px 0">Aucune candidature spontanée pour l'instant.</p>
+        </div>
+      </template>
+    </section>
+
+    <!-- 4. Suivi -->
     <section v-if="view === 'suivi'" class="stack">
       <div>
         <h1>Suivi</h1>
-        <p class="lead">Vos candidatures. Une relance est conseillée sept jours après l'envoi. Les candidatures
-          La Bonne Boîte sont affichées en lecture seule.</p>
+        <p class="lead">Vos candidatures. Une relance est conseillée sept jours après l'envoi, dix pour une candidature
+          spontanée. Les candidatures La Bonne Boîte de l'ancien module sont affichées en lecture seule.</p>
       </div>
       <div v-if="track.error" class="alert error" role="alert">{{ track.error }}</div>
       <div v-if="track.loading" class="card loading" role="status"><span class="spinner"></span>Chargement des candidatures…</div>
@@ -348,7 +508,7 @@
                 <template v-else>
                   <select :value="a.statut" :disabled="track.saving[key(a)]" @change="changeStatus(a, $event.target.value)"
                           :aria-label="'Statut de la candidature ' + (a.poste || '')">
-                    <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
+                    <option v-for="s in (a.statuts || statuses)" :key="s" :value="s">{{ s }}</option>
                   </select>
                   <div v-if="track.rowError[key(a)]" class="sub" style="color:var(--danger)">{{ track.rowError[key(a)] }}</div>
                 </template>
@@ -365,7 +525,7 @@
       </div>
     </section>
 
-    <!-- 4. Paramètres -->
+    <!-- 5. Paramètres -->
     <section v-if="view === 'parametres'" class="stack">
       <div>
         <h1>Paramètres</h1>
@@ -395,10 +555,44 @@
           <span :class="settings.data.llm_configured ? 'state-ok' : 'state-off'">{{ settings.data.llm_configured ? 'Configuré' : 'Non configuré' }}</span>
         </div>
         <div class="item">
+          <div><h3 style="margin:0">La Bonne Boîte</h3>
+            <div class="sub">{{ settings.data.ft_mode_test ? 'Mode test : entreprises fictives.'
+              : "API La Bonne Boîte v2 (candidatures spontanées) : à ajouter à votre application sur francetravail.io." }}</div>
+            <div v-if="settings.acces" class="sub" :style="{ color: settings.acces.ok ? 'var(--ok)' : 'var(--danger)' }">
+              {{ settings.acces.detail }}</div></div>
+          <button class="btn" :disabled="settings.accesLoading" @click="checkAccess">
+            {{ settings.accesLoading ? 'Vérification…' : "Vérifier l'accès" }}</button>
+        </div>
+        <div class="item">
           <div><h3 style="margin:0">Gmail</h3><div class="sub">L'application n'envoie aucun e-mail et ne crée aucun brouillon.</div></div>
           <span :class="settings.data.gmail_configured ? 'state-ok' : 'sub'">{{ settings.data.gmail_configured ? 'Configuré' : 'Non configuré' }}</span>
         </div>
       </div>
+      <form v-if="settings.reglages" class="card" novalidate @submit.prevent="saveReglages">
+        <h2>Robot des candidatures spontanées</h2>
+        <label class="check" style="margin-top:0">
+          <input type="checkbox" v-model="settings.form.envoi_automatique"> Envoi automatique</label>
+        <p class="sub" style="margin:6px 0 0">Désactivé par défaut : le robot s'arrête toujours avant l'envoi, et vous
+          envoyez vous-même. L'essai sur une entreprise n'envoie jamais rien.</p>
+        <div v-if="settings.form.envoi_automatique" class="alert warn" style="margin-top:12px">
+          Activé : le robot enverra lui-même chaque candidature du lot après vérification du formulaire, sans attendre
+          votre relecture, au plus {{ settings.form.plafond_par_jour || '…' }} par jour.</div>
+        <div class="grid-2" style="margin-top:18px">
+          <div>
+            <label for="plafond">Plafond par jour <span class="hint">1 à {{ settings.reglages.plafond_max }}</span></label>
+            <input id="plafond" type="number" min="1" :max="settings.reglages.plafond_max" v-model.number="settings.form.plafond_par_jour">
+          </div>
+          <div>
+            <label for="nomcv">Nom du CV à joindre <span class="hint">facultatif</span></label>
+            <input id="nomcv" type="text" v-model="settings.form.nom_cv" placeholder="Utile si plusieurs documents sur La Bonne Boîte">
+          </div>
+        </div>
+        <div class="row" style="margin-top:18px">
+          <button class="btn primary" type="submit" :disabled="settings.saving">{{ settings.saving ? 'Enregistrement…' : 'Enregistrer' }}</button>
+          <span v-if="settings.saved" class="success">Réglages enregistrés.</span>
+        </div>
+        <div v-if="settings.reglagesError" class="alert error" style="margin-top:14px" role="alert">{{ settings.reglagesError }}</div>
+      </form>
     </section>
   </main>
 </template>
@@ -408,11 +602,12 @@
 <script>
 (function () {
   if (!window.Vue) return; // le message de secours reste affiché
-  const { createApp, reactive, ref, onMounted } = Vue;
+  const { createApp, reactive, ref, computed, onMounted } = Vue;
 
   const VIEWS = [
     { id: 'candidature', label: 'Nouvelle candidature' },
     { id: 'offres', label: 'Offres' },
+    { id: 'spontanees', label: 'Spontanées' },
     { id: 'suivi', label: 'Suivi' },
     { id: 'parametres', label: 'Paramètres' },
   ];
@@ -446,7 +641,16 @@
       const offers = reactive({ keyword: '', city: '', contract: '', hide: true, loading: false, error: '',
                                 items: [], hidden: 0, searched: false });
       const track = reactive({ loading: false, error: '', items: [], saving: {}, rowError: {} });
-      const settings = reactive({ loading: false, error: '', data: null });
+      const settings = reactive({ loading: false, error: '', data: null, reglages: null, saving: false, saved: false,
+                                  reglagesError: '', acces: null, accesLoading: false,
+                                  form: { envoi_automatique: false, plafond_par_jour: 10, nom_cv: '' } });
+      const spont = reactive({ loading: false, error: '', data: null, ville: '', building: false, buildError: '',
+                               empty: false, copied: {}, copyError: {}, marking: {}, markError: {} });
+      const robot = reactive({ data: null, error: '', starting: false, deciding: false, stopping: false });
+      let robotTimer = null, robotSig = '';
+      const sentCount = computed(() => spont.data ? spont.data.lot.filter(e => e.envoyee_le).length : 0);
+      const hasToSend = computed(() => !!spont.data && spont.data.lot.some(e => e.statut === 'À envoyer' && !e.envoyee_le));
+      const robotBusy = computed(() => robot.starting || !!(robot.data && robot.data.actif));
 
       const fmtDate = (v) => {
         if (!v) return '';
@@ -543,14 +747,108 @@
       }
 
       async function loadSettings() {
-        settings.loading = true; settings.error = '';
-        try { settings.data = await api('/api/status'); }
-        catch (e) { settings.error = e.message; } finally { settings.loading = false; }
+        settings.loading = true; settings.error = ''; settings.saved = false; settings.acces = null;
+        try {
+          const [status, reglages] = await Promise.all([api('/api/status'), api('/api/spontanees/reglages')]);
+          settings.data = status; setReglages(reglages);
+        } catch (e) { settings.error = e.message; } finally { settings.loading = false; }
+      }
+
+      function setReglages(r) {
+        settings.reglages = r;
+        Object.assign(settings.form, { envoi_automatique: r.envoi_automatique, plafond_par_jour: r.plafond_par_jour, nom_cv: r.nom_cv });
+      }
+
+      async function saveReglages() {
+        settings.saving = true; settings.saved = false; settings.reglagesError = '';
+        try {
+          setReglages(await api('/api/spontanees/reglages', { method: 'PUT', body: JSON.stringify(settings.form) }));
+          settings.saved = true;
+        } catch (e) { settings.reglagesError = e.message; } finally { settings.saving = false; }
+      }
+
+      async function checkAccess() {
+        settings.accesLoading = true; settings.acces = null;
+        try { settings.acces = await api('/api/spontanees/acces'); }
+        catch (e) { settings.acces = { ok: false, detail: e.message }; } finally { settings.accesLoading = false; }
+      }
+
+      // Candidatures spontanées : lot du jour, robot (état relu toutes les 1,5 s tant qu'il tourne), historique.
+      const signature = (r) => JSON.stringify(r ? [r.id, r.statut, r.compteurs, r.actif] : null);
+
+      function setRobot(data) {
+        robot.data = data; robotSig = signature(data);
+        clearTimeout(robotTimer); robotTimer = null;
+        if (view.value === 'spontanees' && data && data.actif) robotTimer = setTimeout(pollRobot, 1500);
+      }
+
+      async function pollRobot() {
+        let data;
+        try { data = await api('/api/spontanees/robot'); robot.error = ''; }
+        catch (e) { robot.error = e.message; setRobot(robot.data); return; }
+        const changed = signature(data) !== robotSig;
+        setRobot(data);
+        if (changed) {  // une entreprise traitée par le robot : lot et historique à jour
+          try { spont.data = await api('/api/spontanees'); } catch (e) { /* le passage suivant réessaie */ }
+        }
+      }
+
+      async function loadSpontanees() {
+        spont.loading = true; spont.error = '';
+        try {
+          const [data, state] = await Promise.all([api('/api/spontanees'), api('/api/spontanees/robot')]);
+          spont.data = data; setRobot(state);
+        } catch (e) { spont.error = e.message; } finally { spont.loading = false; }
+      }
+
+      async function buildBatch() {
+        spont.building = true; spont.buildError = ''; spont.empty = false;
+        try {
+          const data = await api('/api/spontanees/lot', { method: 'POST', body: JSON.stringify({ ville: spont.ville || null }) });
+          spont.data = data; spont.empty = !data.lot.length;
+        } catch (e) { spont.buildError = e.message; } finally { spont.building = false; }
+      }
+
+      async function copyMessage(e) {
+        spont.copyError[e.siret] = '';
+        try {
+          await navigator.clipboard.writeText(e.message.texte);
+          spont.copied[e.siret] = true;
+          setTimeout(() => { spont.copied[e.siret] = false; }, 2500);
+        } catch (err) { spont.copyError[e.siret] = 'Copie impossible : sélectionnez le message et copiez-le manuellement.'; }
+      }
+
+      async function markSent(e) {
+        spont.marking[e.siret] = true; spont.markError[e.siret] = '';
+        try {
+          await api(`/api/spontanees/${encodeURIComponent(e.siret)}/envoyee`, { method: 'POST' });
+          spont.data = await api('/api/spontanees');
+        } catch (err) { spont.markError[e.siret] = err.message; } finally { spont.marking[e.siret] = false; }
+      }
+
+      async function startRobot(mode) {
+        robot.starting = true; robot.error = '';
+        try { setRobot(await api('/api/spontanees/robot', { method: 'POST', body: JSON.stringify({ mode }) })); }
+        catch (e) { robot.error = e.message; } finally { robot.starting = false; }
+      }
+
+      async function decide(action) {
+        robot.deciding = true; robot.error = '';
+        try { setRobot(await api('/api/spontanees/robot/decision', { method: 'POST', body: JSON.stringify({ action }) })); }
+        catch (e) { robot.error = e.message; } finally { robot.deciding = false; }
+      }
+
+      async function stopRobot() {
+        robot.stopping = true; robot.error = '';
+        try { setRobot(await api('/api/spontanees/robot/arret', { method: 'POST' })); }
+        catch (e) { robot.error = e.message; } finally { robot.stopping = false; }
       }
 
       function route() {
         const id = (location.hash || '').replace('#/', '');
         view.value = VIEWS.some(v => v.id === id) ? id : 'candidature';
+        clearTimeout(robotTimer); robotTimer = null;
+        if (view.value === 'spontanees') loadSpontanees();
         if (view.value === 'suivi') loadTracking();
         if (view.value === 'parametres') loadSettings();
         window.scrollTo(0, 0);
@@ -565,8 +863,10 @@
         } catch (e) { offers.error = e.message; }
       });
 
-      return { views: VIEWS, view, defaults, statuses, prep, offers, track, settings, fmtDate, contractLabel, key,
-               viaLabel, resetPrep, prepare, regenerateLetter, markApplied, copyLetter, prepareFromOffer, search, changeStatus };
+      return { views: VIEWS, view, defaults, statuses, prep, offers, track, settings, spont, robot, sentCount, hasToSend,
+               robotBusy, fmtDate, contractLabel, key, viaLabel, resetPrep, prepare, regenerateLetter, markApplied,
+               copyLetter, prepareFromOffer, search, changeStatus, saveReglages, checkAccess, buildBatch, copyMessage,
+               markSent, startRobot, decide, stopRobot };
     },
   }).mount('#app');
 })();

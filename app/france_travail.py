@@ -103,8 +103,21 @@ def normalize_job(offer: dict) -> dict:
     }
 
 
+def _oauth_error(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return payload.get("error") if isinstance(payload, dict) else None
+
+
 class FranceTravailClient:
     """Met le jeton en mémoire ; `client` permet les tests sans accès réseau."""
+
+    # Jeton refusé : identifiants invalides, ou API non souscrite pour l'application (invalid_scope).
+    AUTH_REFUSED = ("Authentification France Travail refusée : vérifiez les identifiants "
+                    "et la souscription à l'API Offres d'emploi v2.")
+    SCOPE_REFUSED = AUTH_REFUSED
 
     def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None):
         self.settings = settings if settings is not None else get_settings()
@@ -135,6 +148,10 @@ class FranceTravailClient:
         except (ValueError, UnicodeDecodeError):
             raise FranceTravailError(f"Le service {service} a renvoyé un JSON invalide.") from None
 
+    def _scopes(self) -> tuple[str, ...]:
+        """Scopes essayés dans l'ordre ; le premier accordé sert pour le jeton."""
+        return (self.settings.france_travail_scope,)
+
     def _access_token(self, rejected_token: str | None = None) -> str:
         # Les routes FastAPI synchrones peuvent demander un jeton simultanément.
         with self._token_lock:
@@ -142,21 +159,23 @@ class FranceTravailClient:
                 self._token = None
             if self._token is not None and time.monotonic() < self._expires_at:
                 return self._token
-            response = self._request(
-                "POST", TOKEN_URL, "d'authentification France Travail",
-                params={"realm": "/partenaire"},
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.settings.france_travail_client_id,
-                    "client_secret": self.settings.france_travail_client_secret,
-                    "scope": self.settings.france_travail_scope,
-                },
-                headers={"Accept": "application/json"},
-            )
+            for scope in self._scopes():
+                response = self._request(
+                    "POST", TOKEN_URL, "d'authentification France Travail",
+                    params={"realm": "/partenaire"},
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": self.settings.france_travail_client_id,
+                        "client_secret": self.settings.france_travail_client_secret,
+                        "scope": scope,
+                    },
+                    headers={"Accept": "application/json"},
+                )
+                if response.status_code != 400 or _oauth_error(response) != "invalid_scope":
+                    break
             if response.status_code in (400, 401, 403):
                 raise FranceTravailConfigurationError(
-                    "Authentification France Travail refusée : vérifiez les identifiants "
-                    "et la souscription à l'API Offres d'emploi v2."
+                    self.SCOPE_REFUSED if _oauth_error(response) == "invalid_scope" else self.AUTH_REFUSED
                 )
             self._check_status(response, "d'authentification France Travail")
             payload = self._json(response, "d'authentification France Travail")

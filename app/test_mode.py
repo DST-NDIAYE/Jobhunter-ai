@@ -1,8 +1,8 @@
-"""Mode test : faux modèle de langage et offres France Travail fictives, sans aucun appel réseau.
+"""Mode test : faux modèle de langage, offres et entreprises France Travail fictives, sans aucun appel réseau.
 
 Activé uniquement par variables d'environnement, pour tester l'interface sans consommer de quota :
 - JOBHUNTER_FAKE_LLM=1 : le modèle configuré est remplacé par FakeLLM ;
-- JOBHUNTER_FAKE_FT=1 : la recherche France Travail renvoie FAKE_OFFERS.
+- JOBHUNTER_FAKE_FT=1 : la recherche France Travail renvoie FAKE_OFFERS, et La Bonne Boîte FAKE_COMPANIES.
 Le faux modèle ne rédige qu'à partir du catalogue reçu : il n'invente aucun fait sur le candidat.
 """
 
@@ -139,3 +139,51 @@ def fake_search_jobs(keyword=None, location=None, contract_type=None, limit=20):
     if contract_type:
         offers = [o for o in offers if o["contract_type"] == contract_type]
     return offers[:limit]
+
+
+def _company(siret, name, city, postcode, naf, naf_label, rome, potential, form=True, office=""):
+    return {"siret": siret, "company_name": name, "office_name": office, "city": city, "postcode": postcode,
+            "department_number": postcode[:2], "naf": naf, "naf_label": naf_label, "rome": rome,
+            "hiring_potential": potential, "is_high_potential": potential >= 80, "email": "yes" if form else "no"}
+
+
+# Entreprises fictives, au format de l'API La Bonne Boîte v2 : « email » vaut « yes » si le formulaire est actif.
+FAKE_COMPANIES = [
+    _company("00000000000101", "EXEMPLIA ANALYTICS SAS", "PARIS", "75009", "6201Z", "Programmation informatique",
+             "M1405", 92.0, office="Exemplia Analytics"),
+    _company("00000000000102", "NUAGE FICTIF", "LYON", "69002", "6202A",
+             "Conseil en systèmes et logiciels informatiques", "M1405", 85.5),
+    _company("00000000000103", "DONNEES IMAGINAIRES", "NANTES", "44000", "6311Z",
+             "Traitement de données, hébergement et activités connexes", "M1405", 80.0, form=False),
+    _company("00000000000104", "MODELES ET CIE", "TOULOUSE", "31000", "6311Z",
+             "Traitement de données, hébergement et activités connexes", "M1405", 76.0),
+    _company("00000000000201", "NEURONE FICTIF", "GRENOBLE", "38000", "7219Z",
+             "Recherche-développement en autres sciences physiques et naturelles", "M1889", 88.0),
+    _company("00000000000202", "ROBOTIQUE IMAGINAIRE", "VILLENEUVE-D'ASCQ", "59650", "2899B",
+             "Fabrication d'autres machines spécialisées", "M1889", 71.0),
+    _company("00000000000203", "ASSISTANT DEMO", "BORDEAUX", "33000", "6201Z", "Programmation informatique",
+             "M1889", 66.0, form=False),
+    _company("00000000000101", "EXEMPLIA ANALYTICS SAS", "PARIS", "75009", "6201Z", "Programmation informatique",
+             "M1811", 92.0, office="Exemplia Analytics"),  # même entreprise pour un autre métier : dédoublonnée
+    _company("00000000000301", "PIPELINE EXEMPLE", "RENNES", "35000", "6202A",
+             "Conseil en systèmes et logiciels informatiques", "M1811", 83.0),
+    _company("00000000000302", "ENTREPOT FICTIF", "MARSEILLE 2E ARRONDISSEMENT", "13002", "6311Z",
+             "Traitement de données, hébergement et activités connexes", "M1811", 74.0),
+    _company("00000000000303", "FLUX DEMO", "STRASBOURG", "67000", "6201Z", "Programmation informatique",
+             "M1811", 61.0),
+    _company("00000000000401", "TABLEAUX IMAGINAIRES", "MONTPELLIER", "34000", "7320Z",
+             "Études de marché et sondages", "M1419", 79.0),
+    _company("00000000000010", "SOCIETE FICTIVE A", "LILLE", "59000", "7320Z", "Études de marché et sondages",
+             "M1419", 77.0),  # déjà contactée par l'ancien module dans la base de démonstration
+    _company("00000000000402", "INDICATEURS EXEMPLE", "NICE", "06000", "7022Z",
+             "Conseil pour les affaires et autres conseils de gestion", "M1419", 69.0),
+    _company("00000000000403", "MESURE FICTIVE", "DIJON", "21000", "7320Z", "Études de marché et sondages",
+             "M1419", 58.0),
+]
+
+
+def fake_lbb_search(rome, *, ville=None, page=1, page_size=100):
+    """Une page de l'API La Bonne Boîte, sans réseau ; la ville filtre sur le nom de commune."""
+    items = [dict(c) for c in FAKE_COMPANIES if c["rome"] == rome
+             and (not ville or c["city"].casefold().startswith(ville.strip().casefold()))]
+    return items[(page - 1) * page_size: page * page_size]

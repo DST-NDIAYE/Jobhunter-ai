@@ -113,6 +113,16 @@ def init_db(db_path: str | Path | None = None) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, external_id TEXT NOT NULL,
                 channel TEXT, event TEXT NOT NULL, detail TEXT, url TEXT,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+            # Candidatures spontanées : chaque entreprise proposée dans un lot du jour y reste (historique complet).
+            connection.execute("""CREATE TABLE IF NOT EXISTS spontanees (
+                siret TEXT PRIMARY KEY, entreprise TEXT NOT NULL, ville TEXT NOT NULL DEFAULT '',
+                code_postal TEXT NOT NULL DEFAULT '', secteur TEXT NOT NULL DEFAULT '', naf TEXT NOT NULL DEFAULT '',
+                rome TEXT NOT NULL, metier TEXT NOT NULL DEFAULT '', potentiel REAL,
+                lot_du TEXT NOT NULL, lot_zone TEXT NOT NULL DEFAULT '', statut TEXT NOT NULL DEFAULT 'À envoyer',
+                statut_le TEXT, envoyee_le TEXT, envoyee_par TEXT, message_envoye TEXT,
+                robot_note TEXT, robot_le TEXT,
+                cree_le TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+            connection.execute("CREATE TABLE IF NOT EXISTS reglages (cle TEXT PRIMARY KEY, valeur TEXT NOT NULL)")
 
 
 def _identity(external_id: str, source: str) -> tuple[str, str]:
