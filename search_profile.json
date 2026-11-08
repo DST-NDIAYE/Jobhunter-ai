@@ -17,11 +17,5 @@
   ],
   "preferred_levels": ["junior", "entry-level", "graduate"],
   "experience_years": {"min": 0, "max": 3},
-  "future_excluded_title_terms": ["Senior", "Lead", "Principal", "Manager", "Head of"],
-  "metiers_spontanees": [
-    {"rome": "M1405", "libelle": "Data scientist"},
-    {"rome": "M1889", "libelle": "Ingénieur / Ingénieure en Intelligence Artificielle (IA)"},
-    {"rome": "M1811", "libelle": "Data engineer"},
-    {"rome": "M1419", "libelle": "Data analyst"}
-  ]
+  "future_excluded_title_terms": ["Senior", "Lead", "Principal", "Manager", "Head of"]
 }

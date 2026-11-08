@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
-from app.api_spontanees import spontanees_router
+from app.api_campagne import campagne_router
 from app.config import PROJECT_ROOT
 from app.database import init_db
 from app.france_travail import FranceTravailError
@@ -28,9 +28,9 @@ app = FastAPI(
     version="0.2.0",
     description=(
         "Recherche d'offres France Travail classées selon le CV maître, CV et lettre adaptés à chaque offre, "
-        "candidatures spontanées La Bonne Boîte (lot du jour, robot assisté), suivi des candidatures. Aucun e-mail "
-        "n'est envoyé ; aucune candidature non plus, sauf par le robot si vous activez l'envoi automatique "
-        "(désactivé par défaut)."
+        "campagne de candidatures spontanées La Bonne Boîte (robot, après un premier passage contrôlé), suivi des "
+        "candidatures. Aucun e-mail n'est envoyé ; les candidatures spontanées ne sont envoyées que par le robot de "
+        "la campagne, que vous lancez."
     ),
     lifespan=lifespan,
 )
@@ -55,7 +55,7 @@ async def database_error_handler(request: Request, exc: sqlite3.Error):
 
 
 app.include_router(api_router)
-app.include_router(spontanees_router)
+app.include_router(campagne_router)
 if FRONTEND.is_dir():
     app.mount("/frontend", StaticFiles(directory=FRONTEND), name="frontend")
 

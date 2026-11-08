@@ -179,11 +179,35 @@ FAKE_COMPANIES = [
              "Conseil pour les affaires et autres conseils de gestion", "M1419", 69.0),
     _company("00000000000403", "MESURE FICTIVE", "DIJON", "21000", "7320Z", "Études de marché et sondages",
              "M1419", 58.0),
+    # Campagne : Île-de-France, formes juridiques, noms à nettoyer, métier de la phase B.
+    _company("00000000000501", "LIVRAISON EXEMPLE FRANCE SAS", "PARIS", "75011", "6312Z", "Portails Internet",
+             "M1811", 95.0),
+    _company("00000000000502", "CONSEIL FICTIF", "PARIS", "75002", "6202A",
+             "Conseil en systèmes et logiciels informatiques", "M1811", 90.0),
+    _company("00000000000503", "SOLUTIONS DEMO SARL", "NANTERRE", "92000", "6201Z", "Programmation informatique",
+             "M1805", 89.0),
+    _company("00000000000504", "BNP FICTIVE", "SAINT-DENIS", "93200", "6419Z", "Autres intermédiations monétaires",
+             "M1805", 87.0),
+    _company("00000000000505", "GRAPHE IMAGINAIRE", "PARIS", "75015", "6201Z", "Programmation informatique",
+             "M1805", 72.0, form=False),
+    _company("00000000000506", "LOGICIELS 2000", "CRETEIL", "94000", "5829C", "Édition de logiciels applicatifs",
+             "M1805", 70.0),
+    _company("00000000000507", "ETUDES EXEMPLE", "VERSAILLES", "78000", "7320Z", "Études de marché et sondages",
+             "M1204", 81.0),
+    _company("00000000000508", "GESTION FICTIVE SA", "EVRY-COURCOURONNES", "91000", "6920Z", "Activités comptables",
+             "M1204", 65.0),
+    _company("00000000000502", "CONSEIL FICTIF", "PARIS", "75002", "6202A",
+             "Conseil en systèmes et logiciels informatiques", "M1805", 90.0),  # même SIRET, autre métier
+    _company("00000000000601", "DONNEES & CIE", "PARIS", "75010", "6201Z", "Programmation informatique", "M1811", 1.0),
+    _company("00000000000701", "LOGICIELS DE L'AIN", "BOURG-EN-BRESSE", "01000", "6201Z", "Programmation informatique",
+             "M1811", 40.0),  # département à zéro initial : le site le cherche avec « 1 »
 ]
 
 
-def fake_lbb_search(rome, *, ville=None, page=1, page_size=100):
-    """Une page de l'API La Bonne Boîte, sans réseau ; la ville filtre sur le nom de commune."""
+def fake_lbb_search(rome, *, ville=None, citycode=None, page=1, page_size=100):
+    """Une page de l'API La Bonne Boîte, sans réseau ; la ville filtre sur le nom de commune, le code commune sur
+    son département (approximation du rayon de 30 km)."""
     items = [dict(c) for c in FAKE_COMPANIES if c["rome"] == rome
-             and (not ville or c["city"].casefold().startswith(ville.strip().casefold()))]
+             and (not ville or c["city"].casefold().startswith(ville.strip().casefold()))
+             and (not citycode or c["postcode"][:2] == citycode[:2])]
     return items[(page - 1) * page_size: page * page_size]

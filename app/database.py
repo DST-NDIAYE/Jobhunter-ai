@@ -123,6 +123,18 @@ def init_db(db_path: str | Path | None = None) -> None:
                 robot_note TEXT, robot_le TEXT,
                 cree_le TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
             connection.execute("CREATE TABLE IF NOT EXISTS reglages (cle TEXT PRIMARY KEY, valeur TEXT NOT NULL)")
+            # Campagne La Bonne Boîte : une ligne par entreprise ciblée (SIRET), jamais effacée ; alertes par jour.
+            connection.execute("""CREATE TABLE IF NOT EXISTS campagne (
+                siret TEXT PRIMARY KEY, entreprise TEXT NOT NULL, raison_sociale TEXT NOT NULL DEFAULT '',
+                ville TEXT NOT NULL DEFAULT '', code_postal TEXT NOT NULL DEFAULT '',
+                departement TEXT NOT NULL DEFAULT '', secteur TEXT NOT NULL DEFAULT '', naf TEXT NOT NULL DEFAULT '',
+                rome TEXT NOT NULL, metier TEXT NOT NULL DEFAULT '', phase TEXT NOT NULL, potentiel REAL,
+                source TEXT NOT NULL DEFAULT 'api', statut TEXT NOT NULL DEFAULT 'a_faire', motif TEXT, version TEXT,
+                candidature_id TEXT, tentee_le TEXT, envoyee_le TEXT, maj_le TEXT, reponse TEXT, reponse_le TEXT,
+                cree_le TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+            connection.execute("CREATE INDEX IF NOT EXISTS campagne_statut ON campagne (statut, phase)")
+            connection.execute("""CREATE TABLE IF NOT EXISTS campagne_jours (
+                jour TEXT PRIMARY KEY, alerte TEXT, alerte_raison TEXT, alerte_le TEXT)""")
 
 
 def _identity(external_id: str, source: str) -> tuple[str, str]:

@@ -1,6 +1,6 @@
 """Routes REST de JobHunter AI : état, recherche France Travail, préparation d'une candidature, suivi.
 
-Aucune route n'envoie de candidature ni d'e-mail (candidatures spontanées : voir api_spontanees). Seuls les
+Aucune route n'envoie de candidature ni d'e-mail (candidatures spontanées : voir api_campagne). Seuls les
 fichiers générés pour le candidat (CV, lettre) contiennent ses coordonnées ; aucune route ne renvoie de secret.
 """
 

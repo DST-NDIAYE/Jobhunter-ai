@@ -1,11 +1,9 @@
-Bonjour,
+Madame, Monsieur,
 
-Je vous adresse ma candidature spontanée pour un poste dans la data ou l'intelligence artificielle (data science, machine learning, IA générative).
+Je vous propose ma candidature spontanée chez {entreprise}. Votre entreprise m'intéresse beaucoup et je serais heureux de rejoindre vos équipes.
 
-Votre entreprise, {entreprise} ({ville}), a retenu mon attention pour son activité dans le secteur « {secteur} » : je souhaite mettre mes compétences au service de vos projets data et IA.
+Vous trouverez mon CV en pièce jointe. Je reste à votre disposition pour un échange.
 
-Vous trouverez mon CV en pièce jointe. Je reste à votre disposition pour un échange, à votre convenance.
+Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.
 
-Je vous remercie de l'attention que vous porterez à ma candidature.
-
-Cordialement,
+Prénom NOM

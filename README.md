@@ -5,15 +5,16 @@ Application locale pour préparer ses candidatures :
 - **Nouvelle candidature** : collez une offre ; l'application produit un CV d'une page adapté à l'offre
   (PDF), une lettre de motivation vérifiée et un rapport (points forts, manques, informations).
 - **Offres** : recherche France Travail (France entière ou une ville), offres classées selon le CV maître.
-- **Spontanées** : chaque jour, au plus 10 entreprises Data / ML / IA trouvées par La Bonne Boîte et joignables par
-  son formulaire, un message issu de votre modèle de texte, et un robot assisté qui prépare les formulaires.
-- **Suivi** : candidatures, statuts et relance conseillée sept jours après l'envoi (dix pour une spontanée).
-- **Paramètres** : état de France Travail, de La Bonne Boîte, du modèle de langage et de Gmail, sans aucun secret ;
-  réglages du robot.
+- **Campagne** : candidatures spontanées en nombre sur La Bonne Boîte (CV déjà téléversé, message général issu de
+  votre modèle de texte), envoyées par un robot dans sa fenêtre après un premier passage contrôlé : vous choisissez
+  combien en envoyer.
+- **Suivi** : candidatures, statuts et relance conseillée sept jours après l'envoi (dix pour une spontanée de
+  l'ancien lot du jour ; la campagne a son propre historique).
+- **Paramètres** : état de France Travail, de La Bonne Boîte, du modèle de langage et de Gmail, sans aucun secret.
 
-**Rien n'est envoyé automatiquement** : ni e-mail, ni formulaire. C'est vous qui postulez, puis vous cliquez
-sur « Marquer comme postulé ». Seule exception, que vous choisissez : l'envoi automatique du robot des candidatures
-spontanées, désactivé par défaut et plafonné (voir plus bas).
+**Aucun e-mail n'est envoyé**, et aucune candidature aux offres : c'est vous qui postulez, puis vous cliquez sur
+« Marquer comme postulé ». Seule exception, que vous lancez vous-même : le robot de la campagne La Bonne Boîte
+(voir plus bas), plafonné, qui s'arrête au moindre doute.
 
 ## Installation
 
@@ -72,61 +73,93 @@ Voir `.env.example`. En résumé :
 
 Les fichiers générés (CV, lettre, aperçu) sont écrits dans `output/`.
 
-## Candidatures spontanées (La Bonne Boîte)
+## Campagne La Bonne Boîte
 
 ### Accès à l'API, à activer une fois
 
 Les entreprises viennent de l'API officielle **La Bonne Boîte v2** de France Travail, avec la même application que
 les offres (`FRANCE_TRAVAIL_CLIENT_ID` et `FRANCE_TRAVAIL_CLIENT_SECRET`). Sur francetravail.io, ouvrez « Mes
 applications », choisissez votre application et ajoutez l'API « La Bonne Boîte v2 » (scope `api_labonneboitev2`).
-France Travail peut demander une validation. Ensuite, Paramètres → La Bonne Boîte → « Vérifier l'accès ».
+France Travail peut demander une validation. Ensuite : écran Campagne → « Vérifier l'accès à l'API ».
 
-### Lot du jour
+### Cibles
 
-- Métiers : codes ROME `metiers_spontanees` de `search_profile.json` (data science, IA, data engineering, data
-  analyse) ; France entière, ou 30 km autour d'une ville.
-- Seulement les entreprises joignables par le formulaire du site (champ `email` de l'API à `yes`).
-- Au plus 10 entreprises par jour ; un seul lot par jour, qui reste le même toute la journée.
-- Jamais une entreprise déjà proposée dans un lot, ni une entreprise contactée ou tentée par l'ancien module.
-- L'historique garde toutes les entreprises proposées, envoyées ou non (table `spontanees` de la base).
-- Pour chaque entreprise : « Copier le message », « Ouvrir l'entreprise » (fiche La Bonne Boîte), « Marquer comme
-  envoyée » (relance conseillée dix jours après).
+- Phase A (par défaut) : 29 métiers data, IA et informatique ; phase B (désactivée par défaut) : 24 métiers voisins.
+  Codes ROME dans `app/campagne.py`, vérifiés dans le référentiel officiel (bouton « Vérifier les codes »).
+- France entière, toutes les pages de résultats ; Île-de-France d'abord (75, 92, 93, 94, 91, 78, 95, 77), puis
+  département par département ; potentiel d'embauche décroissant ; dédoublonnage par SIRET.
+- Seulement les entreprises joignables par le formulaire du site. Exclues : toute entreprise déjà dans la base
+  (ancien module, opportunités, lot du jour, campagne) et celles que le site marque « déjà candidaté ».
+- Recherche autour de 14 villes d'Île-de-France, des 232 principales villes des autres départements et de 139 petites
+  villes éloignées (`app/villes_campagne.py`) : 99,5 % de la population est à moins de 30 km d'un centre.
+- L'inventaire tourne en arrière-plan (2 appels par seconde au plus) et reprend où il s'est arrêté. Un appel en
+  erreur passagère (HTTP 5xx, 429, délai, réseau) est réessayé après 10 s, puis après 1 min ; ensuite, arrêt.
+- Villes ou phase B ajoutées : « Lancer l'inventaire » fait seulement les recherches nouvelles. Inventaire à jour :
+  « Nouvel inventaire » refait toutes les recherches (la liste de La Bonne Boîte change avec le temps) ; les
+  entreprises déjà en base ne sont jamais reprises ni modifiées, seules les nouvelles sont ajoutées.
 
-Le message ne vient **pas** du modèle de langage : il vient de `modele_message_spontane.txt`, créé au premier usage
-depuis `modele_message_spontane.exemple.txt`. Modifiez-le librement : champs `{entreprise}`, `{ville}`,
-`{secteur}`, et ajoutez-y votre signature. Ce fichier n'est pas versionné. L'application signale un champ inconnu, un
-lien (souvent refusé par France Travail), un message de plus de 1 500 caractères, et les caractères que le
-formulaire du site retire (emojis, %, #…).
+### Message
 
-### Robot assisté
+`modele_message_spontane.txt` (non versionné, exemple : `modele_message_spontane.exemple.txt`), un seul champ :
+`{entreprise}`. Le nom est nettoyé (« UBER EATS FRANCE SAS » devient « Uber Eats France » : casse corrigée, sigles de
+4 lettres ou moins gardés, forme juridique retirée) ; vide, de plus de 50 caractères, avec un chiffre ou un
+« & » (modifié par La Bonne Boîte dans la lettre), il devient « vous ». Pas de « & » ni de lien dans le modèle
+(écrivez « et »). Emojis, % et # sont retirés ; 1 500 caractères au plus. Si `modele_message_spontane_B.txt` existe,
+A et B alternent, et l'historique note la version. Jamais de modèle de langage pour ces candidatures.
 
-« Lancer le robot » ouvre une fenêtre de navigateur visible :
+### Premier passage (obligatoire, dans l'ordre)
 
-1. vous vous connectez vous-même avec France Travail : aucun mot de passe dans l'application, et la session
-   disparaît avec la fenêtre (navigateur neuf, rien n'est enregistré) ;
-2. pour chaque entreprise du lot, le robot ouvre le formulaire, coche votre CV déjà téléversé sur La Bonne Boîte,
-   colle le message, puis **s'arrête avant l'envoi** ;
-3. vous relisez, puis cliquez vous-même sur « Continuer » et « Envoyer la candidature » ; le robot détecte la
-   confirmation (sinon « J'ai envoyé cette candidature »), ou vous choisissez « Passer ».
+1. Accès à l'API, inventaire et plan (métiers, départements, entreprises éligibles), liste des métiers validée.
+2. Essai sans envoi sur une entreprise de votre choix : jusqu'à la Synthèse, capture de la page entière, boutons listés.
+3. Calibrage : vous cliquez vous-même sur le bouton d'envoi ; le robot observe la page qui suit et propose la règle de
+   reconnaissance (bouton, adresse, texte), que vous validez.
+4. Cinq envois automatiques devant vous, à comparer aux accusés de réception.
+5. La campagne.
 
-« Essai sur une entreprise » remplit un seul formulaire et n'envoie jamais rien. Le robot fait des pauses entre les
-actions, prend une capture d'écran à chaque étape, et s'arrête immédiatement sur un captcha (il n'en résout jamais)
-ou sur une page inattendue. Le journal et les captures s'affichent dans l'écran Spontanées et restent dans
-`output/robot/<date-heure>/` (`journal.txt`, images PNG).
+### Envoi d'une candidature
 
-**Choix du CV** parmi les documents de votre espace La Bonne Boîte (le robot ne téléverse jamais de fichier) :
+Une à la fois, dans un seul onglet : formulaire, CV désigné dans les réglages coché seul (nom exact, sinon nom
+contenu ; ambigu ou introuvable : arrêt ; liste de vos documents attendue jusqu'à 30 s, formulaire rechargé une fois,
+toujours vide : arrêt sans alerte, l'entreprise reste à faire), message collé à la place du message par défaut puis relu, compteur vérifié,
+« Continuer », Synthèse vérifiée (entreprise, pièce jointe, lettre ; vos coordonnées ne sont jamais lues). L'entreprise
+est marquée « tentée » avant le clic d'envoi ; la page de confirmation doit correspondre à la règle validée.
+Statuts : envoyée, incertaine (jamais de nouvel essai ; contrôle sur « Gérer vos candidatures » en fin de session),
+erreur, ignorée (sans e-mail, déjà candidaté, formulaire inactif, introuvable sur le site).
 
-1. avec un « Nom du CV à joindre » dans Paramètres : le document de ce nom exact (accents, majuscules et extension
-   ignorés), sinon le seul document dont le nom contient ce texte ;
-2. sans ce nom : le document, s'il est seul dans votre espace.
+### Lancement et sécurités
 
-Dans tous les autres cas (aucun document ou plusieurs documents possibles, deux documents du même nom), le choix est
-ambigu : le robot ne devine pas. Il s'arrête sur le formulaire sans rien cocher, prend une capture et vous demande
-lequel joindre, dans l'écran Spontanées ou dans sa fenêtre. Votre choix vaut pour le reste de l'exécution.
-
-**Envoi automatique** (Paramètres) : désactivé par défaut. Activé, le robot clique lui-même sur « Continuer », vérifie
-la synthèse (message identique), envoie, puis exige la page de confirmation. Plafond : au plus 10 envois par jour
-(réglable de 1 à 10) ; les envois que vous marquez vous-même comptent aussi.
+- Vous choisissez le nombre de candidatures à envoyer (1 à 1000), puis « Démarrer » : le robot les enchaîne sans pause
+  et s'arrête une fois ce nombre envoyé (confirmé), ou quand il n'y a plus d'entreprise à faire. Pas de plafond du
+  jour ni de plage horaire. Le Mac ne se met pas en veille pendant l'exécution (fermer le capot l'y met quand même).
+- À la fin, tout est déjà enregistré ; la fenêtre du robot se ferme toute seule 1 min après une campagne (10 min
+  après un essai ou un calibrage, le temps de relire la Synthèse). Vous pouvez la fermer avant.
+- Pages de résultats retenues pour la journée, par métier et département : le robot va droit à la page de chaque
+  entreprise. La fiche est toujours relue juste avant le formulaire. Départements 01 à 09 : la recherche du site les
+  attend sans zéro (« 1 » pour l'Ain ; « 01 » n'y trouve rien).
+- Le robot ne s'arrête pas pour une entreprise. En échec (page non reconnue, écart, documents absents, erreur du
+  site…), elle est mise de côté et il passe à la suivante. Rien de créé sur le site : elle redevient « à faire » ;
+  brouillon : « brouillon ». Elle est reprise lors d'une prochaine exécution, une seule fois si l'échec venait d'elle
+  (2e échec, ou écart : « erreur »). Envoi tenté sans confirmation : « incertaine », jamais reprise, contrôlée en fin
+  d'exécution dans « Gérer vos candidatures ».
+- « Continuer » sans effet (comme VIVERIS le 07/11) : un 2e clic (un brouillon n'est jamais envoyé), puis mise de côté.
+- Fiche introuvable dans les résultats : l'entreprise est ignorée (« introuvable sur le site »). 10 de suite : la
+  recherche du site est peut-être en panne ; elles restent à faire et le robot fait une pause.
+- Page de résultats en erreur 5xx ou trop lente : deux nouveaux essais (après 30 s, puis 2 min). Jamais de nouvel
+  essai d'un envoi.
+- 3 échecs de suite, ou 2 erreurs 5xx de suite : pause (10 min, puis 20, puis 30), puis reprise. Après 5 pauses sans
+  aucun succès (environ 2 h de panne) : arrêt sans alerte, relance possible.
+- Code 429 (trop de requêtes) : pause de 15 min, puis 30 min, puis 1 h, et reprise ; une 4e fois de suite : arrêt.
+- Captcha : jamais résolu ni contourné par le robot. Il attend 20 min que vous le résolviez dans sa fenêtre, puis
+  reprend.
+- Arrêt pour la journée seulement si le site s'y oppose : captcha non résolu, message de limite ou de blocage, code
+  403, code 429 répété.
+- Session perdue : le robot attend votre reconnexion (20 min au plus), puis reprend. Aucun mot de passe ni session
+  conservés (navigateur neuf à chaque lancement).
+- État écrit à chaque étape : après un plantage, une entreprise tentée n'est jamais reprise.
+- Le navigateur du robot ne joint que La Bonne Boîte et France Travail ; tout le reste est bloqué et noté au journal.
+- Journal lisible, sans texte de page ni coordonnées (code HTTP et premiers mots des réponses en erreur, pages
+  chargées) ; captures des erreurs seulement en campagne, de chaque étape pour l'essai et le calibrage
+  (`output/campagne/<date-heure>/`). Elles peuvent montrer vos coordonnées : `output/` n'est pas versionné.
 
 ## Mode test (aucun quota consommé)
 
@@ -142,7 +175,8 @@ JOBHUNTER_OUTPUT_DIR=/tmp/demo-output JOBHUNTER_CACHE_DIR=/tmp/demo-cache \
 - les autres variables isolent le CV, la base, les sorties et le cache ;
 - `JOBHUNTER_MODELE_SPONTANE` isole le modèle de message, et `JOBHUNTER_LBB_SITE=http://127.0.0.1:8766` envoie le
   robot vers le faux site La Bonne Boîte des tests (`python tests/faux_site_lbb.py 8766`) ; seule une adresse locale
-  est acceptée. En mode test, le navigateur du robot ne peut joindre que la machine locale.
+  est acceptée. En mode test, le navigateur du robot ne peut joindre que la machine locale ;
+  `JOBHUNTER_ROBOT_ACCELERE=1000` divise les pauses du robot (tests uniquement).
 
 ## Tests
 
@@ -151,9 +185,10 @@ JOBHUNTER_OUTPUT_DIR=/tmp/demo-output JOBHUNTER_CACHE_DIR=/tmp/demo-cache \
 ```
 
 Les tests utilisent le faux modèle, un CV maître fictif et des dossiers temporaires : ils ne font aucun appel
-réseau et ne touchent ni à la vraie base ni à `output/`. Les tests du robot le lancent, sans fenêtre, contre le faux
-site La Bonne Boîte local (entreprises et candidat fictifs) : essai, mode assisté, captcha, page inattendue,
-plusieurs documents, envoi automatique plafonné, arrêt demandé.
+réseau et ne touchent ni à la vraie base ni à `output/`. Les tests du robot le lancent, sans fenêtre et en temps
+accéléré, contre le faux site La Bonne Boîte local (entreprises et candidat fictifs) : essai, calibrage, cinq envois,
+campagne (nombre choisi, versions A et B, captures), captcha, limite, 429, page non reconnue, envoi
+incertain, 3 erreurs de suite, session perdue, plantage sans doublon, pause, arrêt, CV ambigu.
 
 ## Structure
 
@@ -168,9 +203,10 @@ plusieurs documents, envoi automatique plafonné, arrêt demandé.
 | `app/france_travail.py` | Client de l'API France Travail |
 | `app/matching.py` | Score TF-IDF / cosinus entre l'offre et le CV maître |
 | `app/applications.py` | Statuts, suivi et relances |
-| `app/spontanees.py` | Candidatures spontanées : API La Bonne Boîte v2, lot du jour, modèle de message, historique, réglages |
-| `app/robot_spontanees.py` | Robot assisté (Playwright, fenêtre visible), lancé dans un processus séparé |
-| `app/api_spontanees.py` | Routes des candidatures spontanées et du robot |
+| `app/spontanees.py` | Client de l'API La Bonne Boîte v2, nettoyage, anciennes candidatures spontanées (suivi) |
+| `app/campagne.py` | Campagne : cibles, nom et message, nombre à envoyer, alertes, statuts, historique, export |
+| `app/robot_campagne.py` | Robot de la campagne (Playwright, fenêtre visible), lancé dans un processus séparé |
+| `app/api_campagne.py` | Routes de la campagne et du robot |
 | `app/opportunities.py` | Opportunités La Bonne Boîte de l'ancien module, en lecture seule |
 | `app/test_mode.py` | Faux modèle, offres et entreprises fictives |
 | `tests/faux_site_lbb.py` | Faux site La Bonne Boîte pour tester le robot |

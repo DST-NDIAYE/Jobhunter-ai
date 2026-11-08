@@ -107,6 +107,30 @@
     .capture img { display: block; width: 100%; height: 120px; object-fit: cover; object-position: top;
                    border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-bottom: 6px; }
     .success { color: var(--ok); font-weight: 600; }
+    .etat { font-weight: 650; font-size: 14px; border-radius: 999px; padding: 4px 12px; white-space: nowrap;
+            background: var(--bg); color: var(--muted); }
+    .etat.ok { background: #e8f5ee; color: var(--ok); } .etat.attente { background: var(--accent-soft); color: #1d3c99; }
+    .etat.pause { background: var(--warn-soft); color: var(--warn); } .etat.alerte { background: var(--danger-soft); color: var(--danger); }
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .stat { padding: 16px 18px; } .stat .chiffre { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
+    .etapes { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0 0 18px; list-style: none; counter-reset: etape; }
+    .etapes li { counter-increment: etape; font-size: 13px; color: var(--muted); border: 1px solid var(--line);
+                 border-radius: 999px; padding: 4px 12px; }
+    .etapes li::before { content: counter(etape) ". "; font-weight: 650; }
+    .etapes li.faite { color: var(--ok); border-color: #bfe3cf; background: #f1f9f4; }
+    .etapes li.courante { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+    .passage + .passage { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+    ul.choix { margin-top: 10px; max-height: 300px; overflow: auto; }
+    ul.choix .check span { color: var(--text); }
+    ul.metiers li { padding: 3px 0; font-size: 13.5px; }
+    .lancement { align-items: end; }
+    .lancement .nombre { margin: 0; font-weight: 600; font-size: 14px; }
+    .lancement .nombre input { display: block; width: 140px; margin-top: 6px; }
+    .filtres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.6fr); gap: 12px; margin-top: 14px; }
+    .pagination { justify-content: space-between; margin-top: 14px; }
+    .statut { font-weight: 600; } .statut.envoyee { color: var(--ok); } .statut.incertaine, .statut.brouillon { color: var(--warn); }
+    .statut.erreur { color: var(--danger); } .statut.ignoree { color: var(--muted); }
+    table.plan th, table.plan td { text-align: right; padding: 8px 6px; } table.plan th:first-child, table.plan td:first-child { text-align: left; }
 
     table { width: 100%; border-collapse: collapse; }
     th { text-align: left; font-size: 13px; color: var(--muted); font-weight: 600; padding: 10px 12px;
@@ -134,6 +158,15 @@
       .card { padding: 18px; }
       .grid-3, .grid-2, .form-row, .form-row.two { grid-template-columns: 1fr; }
       .captures { grid-template-columns: repeat(2, 1fr); }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stats .stat:last-child { grid-column: 1 / -1; }
+      .filtres { grid-template-columns: 1fr 1fr; }
+      .filtres > div:last-child { grid-column: 1 / -1; }
+      .pagination .sub { order: -1; width: 100%; }
+      table.plan tr { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+      table.plan td { width: auto; text-align: left; }
+      table.plan td[data-label]::before { display: inline; margin-right: 4px; }
+      table.plan td:first-child, table.plan td:last-child { width: 100%; }
       nav { flex-wrap: wrap; overflow-x: visible; }
       nav a { padding: 6px 10px; }
       .offer-head { flex-direction: column; gap: 4px; }
@@ -342,155 +375,364 @@
       </template>
     </section>
 
-    <!-- 3. Candidatures spontanées -->
-    <section v-if="view === 'spontanees'" class="stack">
+    <!-- 3. Campagne La Bonne Boîte -->
+    <section v-if="view === 'campagne'" class="stack">
       <div>
-        <h1>Candidatures spontanées</h1>
-        <p class="lead">Chaque jour, au plus {{ spont.data ? spont.data.plafond_max : 10 }} entreprises Data, ML et IA
-          trouvées par La Bonne Boîte, joignables par son formulaire et jamais contactées. Le message vient de votre
-          modèle de texte, pas du modèle de langage.</p>
+        <h1>Campagne</h1>
+        <p class="lead">Candidatures spontanées en nombre sur La Bonne Boîte : votre CV déjà téléversé et un message
+          général, jamais rédigé par le modèle de langage. Choisissez combien en envoyer : le robot les enchaîne dans sa
+          fenêtre, sans pause, puis s'arrête.</p>
       </div>
-      <div v-if="spont.error" class="alert error" role="alert">{{ spont.error }}</div>
-      <div v-if="spont.loading && !spont.data" class="card loading" role="status"><span class="spinner"></span>Chargement…</div>
-      <template v-else-if="spont.data">
+      <div v-if="camp.error" class="alert error" role="alert">{{ camp.error }}</div>
+      <div v-if="camp.loading && !camp.data" class="card loading" role="status"><span class="spinner"></span>Chargement…</div>
+      <template v-else-if="camp.data">
+        <!-- État et commandes -->
         <div class="card">
           <div class="offer-head">
-            <h2 style="margin:0">Lot du {{ fmtDate(spont.data.date) }}</h2>
-            <span v-if="spont.data.lot.length" class="meta">{{ spont.data.zone }} · {{ sentCount }} sur {{ spont.data.lot.length }} envoyée(s)</span>
+            <h2 style="margin:0">État de la campagne</h2>
+            <span :class="['etat', etatCampagne.classe]">{{ etatCampagne.libelle }}</span>
           </div>
-          <p class="sub" style="margin:8px 0 0">Modèle du message : <code>{{ spont.data.modele.chemin }}</code>, à modifier
-            librement (champs <code>{entreprise}</code>, <code>{ville}</code>, <code>{secteur}</code> ; ajoutez-y votre signature).</p>
-          <div v-for="p in spont.data.modele.problemes" :key="p" class="alert error" style="margin-top:14px" role="alert">{{ p }}</div>
-          <form v-if="!spont.data.lot.length" @submit.prevent="buildBatch" style="margin-top:20px">
-            <div class="form-row two">
-              <div>
-                <label for="spont-city">Ville <span class="hint">facultatif, 30 km autour</span></label>
-                <input id="spont-city" type="text" v-model="spont.ville" placeholder="France entière">
-              </div>
-              <button class="btn primary" type="submit" :disabled="spont.building">Constituer le lot du jour</button>
-            </div>
-            <p class="sub" style="margin:12px 0 0">Métiers : data science, intelligence artificielle, data engineering
-              et data analyse. Exclues : les entreprises déjà proposées, et les {{ spont.data.anciennes_contactees }}
-              entreprises contactées ou tentées par l'ancien module.</p>
-          </form>
-          <div v-if="spont.building" class="loading" role="status"><span class="spinner"></span>Recherche des entreprises sur La Bonne Boîte…</div>
-          <div v-if="spont.buildError" class="alert error" style="margin-top:14px" role="alert">{{ spont.buildError }}</div>
-          <div v-if="spont.empty && !spont.data.lot.length" class="alert info" style="margin-top:14px">
-            Aucune entreprise joignable par le formulaire et jamais contactée pour cette recherche : essayez une autre
-            ville, ou la France entière.</div>
-        </div>
-
-        <div class="card">
-          <div class="offer-head">
-            <h2 style="margin:0">Robot assisté</h2>
-            <span class="meta">{{ spont.data.reglages.envoi_automatique
-              ? 'Envoi automatique activé, au plus ' + spont.data.reglages.plafond_par_jour + ' par jour'
-              : 'Envoi automatique désactivé' }}</span>
-          </div>
-          <p class="sub" style="margin:8px 0 16px">Une fenêtre de navigateur s'ouvre : vous vous connectez vous-même avec
-            France Travail (aucun mot de passe dans l'application, aucune session conservée). Pour chaque entreprise du
-            lot, le robot coche votre CV déjà téléversé sur La Bonne Boîte et colle le message, puis s'arrête avant
-            l'envoi : vous relisez et envoyez vous-même. Au plus {{ spont.data.reglages.plafond_par_jour }} envois par
-            jour, une capture à chaque étape, arrêt immédiat en cas de captcha ou de page inattendue.
-            « Essai » remplit le formulaire d'une seule entreprise et n'envoie jamais rien.</p>
-          <div class="row">
-            <button class="btn" :disabled="robotBusy || !hasToSend" @click="startRobot('essai')">Essai sur une entreprise</button>
-            <button class="btn primary" :disabled="robotBusy || !hasToSend" @click="startRobot('assiste')">Lancer le robot</button>
+          <div v-if="camp.data.alerte" class="alert error" style="margin-top:14px" role="alert">
+            <strong>Arrêtée sur alerte : {{ camp.data.alerte.libelle }}.</strong> {{ camp.data.alerte.raison }}
+            <div style="margin-top:6px">Pas de reprise aujourd'hui : la campagne pourra redémarrer demain.</div></div>
+          <div v-if="camp.data.plan.inventaire.etat === 'erreur'" class="alert error" style="margin-top:14px" role="alert">
+            <strong>Inventaire interrompu.</strong> {{ camp.data.plan.inventaire.erreur }}</div>
+          <div v-if="camp.acces && !camp.acces.ok && camp.data.etape > 1" class="alert warn" style="margin-top:14px">
+            API La Bonne Boîte : {{ camp.acces.detail }}</div>
+          <div v-if="robot.data && robot.data.actif && robot.data.attente === 'connexion'" class="alert info" style="margin-top:14px">
+            Connectez-vous vous-même avec France Travail dans la fenêtre du robot : il attend votre connexion.</div>
+          <div v-if="robot.data && robot.data.actif && robot.data.attente === 'reconnexion'" class="alert warn" style="margin-top:14px">
+            Session perdue : reconnectez-vous dans la fenêtre du robot (20 min au plus), la campagne reprendra ensuite.</div>
+          <div v-if="robot.data && robot.data.actif && robot.data.attente === 'clic'" class="alert info" style="margin-top:14px">
+            Calibrage : cliquez vous-même sur le bouton d'envoi du site pour <strong>{{ robot.data.entreprise }}</strong>
+            dans la fenêtre du robot, ou passez (le brouillon reste sur La Bonne Boîte).
+            <div class="row" style="margin-top:10px"><button class="btn" :disabled="robot.busy" @click="passerCalibrage">Passer</button></div></div>
+          <div v-if="robot.data && robot.data.actif && robot.data.statut === 'en_cours' && !robot.data.attente" class="loading" role="status">
+            <span class="spinner"></span>{{ robot.data.etape }}</div>
+          <div class="row lancement" style="margin-top:16px">
+            <label for="c-nombre" class="nombre">Candidatures à envoyer
+              <input id="c-nombre" type="number" min="1" :max="camp.data.objectif_max" v-model.number="camp.nombre"
+                     @input="camp.nombreTouche = true"></label>
+            <button class="btn primary" :disabled="robotBusy || camp.data.etape < 5 || !!camp.data.alerte || !nombreValide"
+                    @click="startRobot('campagne', null, camp.nombre)">Démarrer</button>
+            <button v-if="robot.data && robot.data.actif && !robot.data.pause_demandee" class="btn" :disabled="robot.busy"
+                    @click="pauseRobot(true)">Pause</button>
+            <button v-if="robot.data && robot.data.actif && robot.data.pause_demandee" class="btn" :disabled="robot.busy"
+                    @click="pauseRobot(false)">Reprendre</button>
             <button v-if="robot.data && robot.data.actif" class="btn" :disabled="robot.stopping" @click="stopRobot">
-              {{ robot.data.fenetre_ouverte ? 'Fermer la fenêtre du robot' : 'Arrêter le robot' }}</button>
+              {{ robot.data.fenetre_ouverte ? 'Fermer la fenêtre du robot' : 'Arrêter' }}</button>
           </div>
-          <p v-if="!hasToSend && !robotBusy" class="sub" style="margin:10px 0 0">Constituez le lot du jour pour lancer le robot.</p>
+          <p class="sub" style="margin:12px 0 0">Le robot s'arrête une fois ce nombre envoyé (confirmé). Une entreprise en
+            échec est mise de côté (reprise plus tard) et il continue ; si le site est en difficulté, il fait une pause.
+            Arrêt plus tôt seulement si le site s'y oppose (limite, code 403, captcha non résolu). Envoyées aujourd'hui :
+            {{ camp.data.envois_du_jour }}.</p>
+          <p v-if="camp.nombre !== '' && !nombreValide" class="sub" style="margin:6px 0 0;color:var(--danger)">
+            Indiquez un nombre entier entre 1 et {{ camp.data.objectif_max }}.</p>
+          <p v-if="camp.data.etape < 5" class="sub" style="margin:6px 0 0">Démarrer : terminez d'abord le premier passage
+            (étape {{ camp.data.etape }} sur 5).</p>
           <div v-if="robot.error" class="alert error" style="margin-top:14px" role="alert">{{ robot.error }}</div>
-          <template v-if="robot.data && robot.data.id">
-            <div v-if="robot.data.actif && robot.data.statut === 'en_cours' && !robot.data.attente" class="loading" role="status">
-              <span class="spinner"></span>{{ robot.data.etape }}</div>
-            <div v-if="robot.data.attente === 'connexion'" class="alert info">
-              Connectez-vous avec France Travail dans la fenêtre du robot : il attend votre connexion.</div>
-            <div v-if="robot.data.attente === 'decision'" class="alert info">
-              Formulaire prêt pour <strong>{{ robot.data.entreprise }}</strong> : relisez-le dans la fenêtre du robot et
-              envoyez-le vous-même, ou passez.
-              <div class="row" style="margin-top:12px">
-                <button class="btn primary" :disabled="robot.deciding" @click="decide('envoyee')">J'ai envoyé cette candidature</button>
-                <button class="btn" :disabled="robot.deciding" @click="decide('passer')">Passer</button>
+        </div>
+
+        <!-- Compteurs -->
+        <div class="stats">
+          <div class="card stat"><div class="sub">Envoyées</div><div class="chiffre">{{ camp.data.compteurs.jour.envoyees }}</div>
+            <div class="sub">aujourd'hui · {{ camp.data.compteurs.total.envoyees }} au total</div></div>
+          <div class="card stat"><div class="sub">Incertaines</div><div class="chiffre">{{ camp.data.compteurs.jour.incertaines }}</div>
+            <div class="sub">aujourd'hui · {{ camp.data.compteurs.total.incertaines }} au total</div></div>
+          <div class="card stat"><div class="sub">Ignorées</div>
+            <div class="chiffre">{{ camp.data.compteurs.jour.ignorees.sans_email + camp.data.compteurs.jour.ignorees.deja_candidate
+              + camp.data.compteurs.jour.ignorees.formulaire_inactif + camp.data.compteurs.jour.ignorees.introuvable }}</div>
+            <div class="sub">aujourd'hui · total : sans e-mail {{ camp.data.compteurs.total.ignorees.sans_email }}, déjà
+              candidaté {{ camp.data.compteurs.total.ignorees.deja_candidate }}, formulaire inactif
+              {{ camp.data.compteurs.total.ignorees.formulaire_inactif }}, introuvable sur le site
+              {{ camp.data.compteurs.total.ignorees.introuvable }}</div></div>
+          <div class="card stat"><div class="sub">Erreurs</div><div class="chiffre">{{ camp.data.compteurs.jour.erreurs }}</div>
+            <div class="sub">aujourd'hui · {{ camp.data.compteurs.total.erreurs }} au total</div></div>
+          <div class="card stat"><div class="sub">Restantes</div><div class="chiffre">{{ camp.data.compteurs.restantes.A
+              + (camp.data.reglages.phase_b ? camp.data.compteurs.restantes.B : 0) }}</div>
+            <div class="sub">phase A : {{ camp.data.compteurs.restantes.A }} · phase B : {{ camp.data.compteurs.restantes.B }}<template
+              v-if="!camp.data.reglages.phase_b"> (désactivée)</template></div></div>
+        </div>
+
+        <!-- Plan et inventaire : toujours visibles -->
+        <div class="card">
+          <h2>Plan</h2>
+          <div class="row">
+            <button class="btn" :disabled="camp.accesLoading" @click="checkAccesCampagne">
+              {{ camp.accesLoading ? 'Vérification…' : "Vérifier l'accès à l'API" }}</button>
+            <button class="btn" :disabled="camp.invLoading || inventaireEnCours" @click="lancerInventaire()">
+              {{ inventaireEnCours ? 'Inventaire en cours…' : "Lancer l'inventaire des entreprises" }}</button>
+            <button v-if="inventaireAJour" class="btn" :disabled="camp.invLoading" @click="nouvelInventaire">
+              Nouvel inventaire</button>
+          </div>
+          <div v-if="camp.acces" :class="['alert', camp.acces.ok ? 'info' : 'error']" style="margin-top:12px">{{ camp.acces.detail }}
+              <div v-if="!camp.acces.ok" style="margin-top:6px">Autre possibilité : lire les pages de recherche du site
+                La Bonne Boîte. Elle n'est pas lancée sans votre accord.</div></div>
+            <div v-if="camp.invError" class="alert error" style="margin-top:12px" role="alert">{{ camp.invError }}</div>
+          <p class="sub" style="margin:10px 0 14px">Inventaire : {{ inventaireTexte }}</p>
+          <details v-if="camp.data.plan.inventaire.refus && camp.data.plan.inventaire.refus.length" class="message-repli"
+                   style="margin:0 0 14px">
+            <summary>Recherches refusées par La Bonne Boîte et sautées ({{ camp.data.plan.inventaire.refus.length }})</summary>
+            <ul class="plain metiers"><li v-for="r in camp.data.plan.inventaire.refus" :key="r">{{ r }}</li></ul>
+          </details>
+            <table class="compact plan">
+              <thead><tr><th>Phase</th><th>Métiers</th><th v-for="d in camp.data.plan.phases.A.idf" :key="d.departement">{{ d.departement }}</th>
+                <th>Reste de la France</th><th>Éligibles</th></tr></thead>
+              <tbody>
+                <tr v-for="p in ['A', 'B']" :key="p">
+                  <td data-label="Phase">{{ p }}<span v-if="p === 'B' && !camp.data.reglages.phase_b" class="sub"> (désactivée)</span></td>
+                  <td data-label="Métiers">{{ camp.data.plan.phases[p].metiers }}</td>
+                  <td v-for="d in camp.data.plan.phases[p].idf" :key="d.departement" :data-label="d.departement">{{ d.nombre }}</td>
+                  <td data-label="Reste de la France">{{ camp.data.plan.phases[p].reste }}</td>
+                  <td data-label="Éligibles"><strong>{{ camp.data.plan.phases[p].eligibles }}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="sub" style="margin:8px 0 0">Ordre : Île-de-France (75, 92, 93, 94, 91, 78, 95, 77), puis le reste de la
+              France ; potentiel d'embauche décroissant ; dédoublonnage par SIRET. Déjà dans votre base et exclues :
+              {{ camp.data.plan.deja_en_base }}.</p>
+            <details class="message-repli">
+              <summary>Métiers de la phase A ({{ camp.data.plan.phases.A.metiers }}) et de la phase B ({{ camp.data.plan.phases.B.metiers }})</summary>
+              <div class="grid-2" style="margin-top:10px">
+                <div v-for="p in ['A', 'B']" :key="p">
+                  <h3>Phase {{ p }}{{ p === 'B' ? ' (à valider, désactivée par défaut)' : '' }}</h3>
+                  <div v-for="g in camp.data.metiers[p]" :key="g.groupe" style="margin-bottom:10px">
+                    <div class="sub"><strong>{{ g.groupe }}</strong></div>
+                    <ul class="plain metiers"><li v-for="m in g.metiers" :key="m.rome"><code>{{ m.rome }}</code> {{ m.libelle }}
+                      <span v-if="camp.verif && camp.verif.metiers[m.rome]" :class="camp.verif.metiers[m.rome].ok ? 'state-ok' : 'state-off'">
+                        {{ camp.verif.metiers[m.rome].ok ? '✓' : '≠ ' + (camp.verif.metiers[m.rome].officiel || 'introuvable') }}</span></li></ul>
+                  </div>
+                </div>
               </div>
+            </details>
+        </div>
+
+        <!-- Premier passage -->
+        <div v-if="camp.data.etape < 5" class="card">
+          <h2>Premier passage</h2>
+          <ol class="etapes">
+            <li v-for="(t, i) in etapesPassage" :key="i" :class="{ faite: i + 1 < camp.data.etape, courante: i + 1 === camp.data.etape }">{{ t }}</li>
+          </ol>
+
+          <!-- 1. Liste des métiers -->
+          <div v-if="camp.data.etape === 1" class="passage">
+            <h3>1. Accès à l'API, plan et liste des métiers</h3>
+            <p class="sub" style="margin:0">Vérifiez l'accès et lancez l'inventaire (« Plan », ci-dessus), relisez les métiers, puis validez.</p>
+            <div v-if="camp.data.etape === 1" class="row" style="margin-top:12px">
+              <button class="btn" :disabled="camp.verifLoading" @click="verifierMetiers">
+                {{ camp.verifLoading ? 'Vérification…' : 'Vérifier les codes dans le référentiel' }}</button>
+              <button class="btn primary" :disabled="camp.busy" @click="validerMetiers">Valider la liste des métiers</button>
             </div>
-            <div v-if="robot.data.attente === 'cv'" class="alert warn" role="alert" style="margin-top:14px">
-              Choix du CV ambigu pour <strong>{{ robot.data.entreprise }}</strong> : plusieurs documents de votre espace
-              La Bonne Boîte sont possibles. Le robot n'a rien coché et attend : lequel joindre ?
-              <div class="choix-cv">
-                <button v-for="(d, i) in robot.data.documents || []" :key="i" class="btn" :disabled="robot.deciding"
-                        @click="decide('cv', i)">Joindre « {{ d.libelle }} »</button>
-              </div>
-              <div style="margin-top:10px">Pour ne plus avoir à choisir, indiquez le nom du CV dans Paramètres.</div>
+            <div v-if="camp.verif" :class="['alert', camp.verif.ok ? 'info' : 'warn']" style="margin-top:12px">
+              {{ camp.verif.ok ? 'Tous les codes existent dans le référentiel officiel des métiers.'
+                : 'Certains codes ne correspondent pas au référentiel : voir la liste.' }}</div>
+          </div>
+
+          <!-- 2 et 3. Essai et calibrage : choix de l'entreprise -->
+          <div v-if="camp.data.etape === 2 || camp.data.etape === 3" class="passage">
+            <h3 v-if="camp.data.etape === 2">2. Essai sans envoi sur une entreprise de votre choix</h3>
+            <h3 v-else>3. Calibrage : vous envoyez vous-même une candidature, le robot observe</h3>
+            <p class="sub" style="margin:0 0 10px">{{ camp.data.etape === 2
+              ? "Le robot va jusqu'à la Synthèse, capture la page entière et liste les boutons ; il n'envoie rien (un brouillon reste sur La Bonne Boîte)."
+              : "Choisissez une entreprise qui vous intéresse peu : une candidature ne se refait pas. Le robot va jusqu'à la Synthèse, puis vous cliquez vous-même sur le bouton d'envoi du site." }}</p>
+            <div class="form-row two">
+              <div><label for="camp-recherche">Entreprise</label>
+                <input id="camp-recherche" type="text" v-model="camp.recherche" placeholder="Nom, ville ou SIRET" @input="chercherEntreprises"></div>
             </div>
-            <div v-if="robot.data.statut && robot.data.statut !== 'en_cours'"
-                 :class="['alert', robot.data.statut === 'termine' ? 'info' : 'warn']" style="margin-top:14px">
-              {{ robot.data.resume }}</div>
-            <p v-if="robot.data.actif && robot.data.fenetre_ouverte" class="sub" style="margin:10px 0 0">
-              La fenêtre du robot reste ouverte pour relire la page : fermez-la pour relancer le robot.</p>
-            <h3 style="margin-top:22px">Journal</h3>
-            <pre class="journal">{{ robot.data.journal.join('\n') || 'Aucune ligne pour l’instant.' }}</pre>
-            <template v-if="robot.data.captures.length">
-              <h3 style="margin-top:22px">Captures ({{ robot.data.captures.length }})</h3>
-              <div class="captures">
-                <a v-for="c in robot.data.captures" :key="c.nom" class="capture" :href="c.url" target="_blank" rel="noopener noreferrer">
-                  <img :src="c.url" :alt="c.legende" loading="lazy">{{ c.legende }}</a>
+            <ul class="plain choix">
+              <li v-for="e in camp.choix" :key="e.siret">
+                <label class="check" style="margin:0"><input type="radio" name="camp-choix" :value="e.siret" v-model="camp.choixSiret">
+                  <span><strong>{{ e.entreprise }}</strong> · {{ e.ville || 'ville inconnue' }} · {{ e.metier }}
+                    <span v-if="e.statut === 'brouillon'" class="tag">brouillon non envoyé</span></span></label></li>
+              <li v-if="!camp.choix.length" class="sub">Aucune entreprise : lancez l'inventaire, ou ajoutez-en une ci-dessous.</li>
+            </ul>
+            <details class="message-repli">
+              <summary>Ajouter une entreprise à la main (SIRET)</summary>
+              <form class="grid-3" style="margin-top:10px" novalidate @submit.prevent="ajouterManuelle">
+                <div><label for="m-siret">SIRET</label><input id="m-siret" type="text" inputmode="numeric" v-model="camp.manuel.siret"></div>
+                <div><label for="m-nom">Nom sur La Bonne Boîte</label><input id="m-nom" type="text" v-model="camp.manuel.entreprise"></div>
+                <div><label for="m-rome">Métier</label><select id="m-rome" v-model="camp.manuel.rome">
+                  <option v-for="m in tousMetiers" :key="m.rome" :value="m.rome">{{ m.rome }} · {{ m.libelle }}</option></select></div>
+                <div><label for="m-dep">Département</label><select id="m-dep" v-model="camp.manuel.departement">
+                  <option value="">Choisir…</option>
+                  <option v-for="d in camp.data.plan.departements" :key="d" :value="d">{{ d }}</option></select></div>
+                <div><button class="btn" type="submit" :disabled="camp.busy">Ajouter</button></div>
+              </form>
+              <div v-if="camp.manuelError" class="alert error" style="margin-top:10px" role="alert">{{ camp.manuelError }}</div>
+            </details>
+            <div class="row" style="margin-top:14px">
+              <button v-if="camp.data.etape === 2" class="btn primary" :disabled="robotBusy || !camp.choixSiret"
+                      @click="startRobot('essai', camp.choixSiret)">Lancer l'essai (sans envoi)</button>
+              <button v-else class="btn primary" :disabled="robotBusy || !camp.choixSiret"
+                      @click="startRobot('calibrage', camp.choixSiret)">Lancer le calibrage</button>
+              <button v-if="camp.data.etape === 3" class="btn" :disabled="robotBusy || !camp.choixSiret"
+                      @click="startRobot('essai', camp.choixSiret)">Refaire un essai</button>
+            </div>
+            <div v-if="camp.data.passage.essai" class="alert info" style="margin-top:14px">
+              Essai du {{ fmtDate(camp.data.passage.essai.le) }} sur <strong>{{ camp.data.passage.essai.entreprise }}</strong> :
+              Synthèse atteinte, rien envoyé.
+              <div v-if="camp.data.passage.essai.ecarts && camp.data.passage.essai.ecarts.length" style="margin-top:6px"><strong>Écart :</strong>
+                {{ camp.data.passage.essai.ecarts.join(', ') }}.</div>
+              <div style="margin-top:6px">Boutons trouvés : {{ (camp.data.passage.essai.boutons || []).join(' · ') }}</div>
+              <a v-if="camp.data.passage.essai.capture" class="link" target="_blank" rel="noopener noreferrer"
+                 :href="'/api/campagne/robot/captures/' + camp.data.passage.essai.run + '/' + camp.data.passage.essai.capture">Voir la capture de la Synthèse</a>
+            </div>
+            <!-- Règle proposée par le calibrage -->
+            <form v-if="camp.data.etape === 3 && camp.data.passage.regle" class="regle" novalidate @submit.prevent="validerRegle"
+                  @input="camp.regleTouched = true">
+              <h3 style="margin-top:16px">Règle de reconnaissance proposée</h3>
+              <p class="sub" style="margin:0 0 10px">Observée après votre clic sur <strong>{{ camp.data.passage.calibrage && camp.data.passage.calibrage.entreprise }}</strong>
+                (<a v-if="camp.data.passage.calibrage && camp.data.passage.calibrage.capture" class="link" target="_blank" rel="noopener noreferrer"
+                :href="'/api/campagne/robot/captures/' + camp.data.passage.calibrage.run + '/' + camp.data.passage.calibrage.capture">capture</a>).
+                Un envoi n'est compté que si l'adresse et le texte correspondent.</p>
+              <div class="grid-3">
+                <div><label for="r-bouton">Bouton d'envoi</label><input id="r-bouton" type="text" v-model="camp.regle.bouton"></div>
+                <div><label for="r-url">Adresse de confirmation</label><input id="r-url" type="text" v-model="camp.regle.url_motif"></div>
+                <div><label for="r-texte">Texte de confirmation</label><input id="r-texte" type="text" v-model="camp.regle.texte"></div>
               </div>
-            </template>
+              <div class="row" style="margin-top:12px"><button class="btn primary" type="submit" :disabled="camp.busy">Valider la règle</button></div>
+              <div v-if="camp.regleError" class="alert error" style="margin-top:10px" role="alert">{{ camp.regleError }}</div>
+            </form>
+          </div>
+
+          <!-- 4. Cinq envois devant vous -->
+          <div v-if="camp.data.etape === 4" class="passage">
+            <h3>4. Cinq envois automatiques devant vous</h3>
+            <p class="sub" style="margin:0 0 10px">Le robot envoie cinq candidatures, puis s'arrête. Comparez-les ensuite aux
+              accusés de réception reçus par e-mail.</p>
+            <div class="row">
+              <button class="btn primary" :disabled="robotBusy || !!camp.data.alerte"
+                      @click="startRobot('cinq')">Lancer les envois devant moi</button>
+              <button v-if="camp.data.passage.cinq && camp.data.passage.cinq.envoyees" class="btn" :disabled="camp.busy || robotBusy"
+                      @click="validerCinq">Les accusés correspondent : valider</button>
+            </div>
+            <div v-if="camp.data.passage.cinq" class="alert info" style="margin-top:12px">
+              {{ camp.data.passage.cinq.envoyees }} envoi(s) confirmé(s) le {{ fmtDate(camp.data.passage.cinq.le) }}.
+              Comparez avec vos accusés de réception avant de valider.</div>
+            <div v-if="camp.cinqError" class="alert error" style="margin-top:12px" role="alert">{{ camp.cinqError }}</div>
+          </div>
+        </div>
+
+        <!-- Robot : journal et captures -->
+        <div v-if="robot.data && robot.data.id" class="card">
+          <div class="offer-head"><h2 style="margin:0">Robot</h2>
+            <span class="meta">{{ modesRobot[robot.data.mode] || '' }} · {{ fmtDateHeure(robot.data.debut) }}</span></div>
+          <div v-if="robot.data.statut && !['en_cours', 'en_pause'].includes(robot.data.statut)"
+               :class="['alert', robot.data.statut === 'termine' ? 'info' : 'warn']" style="margin-top:12px">{{ robot.data.resume }}</div>
+          <p v-if="robot.data.actif && robot.data.fenetre_ouverte" class="sub" style="margin:10px 0 0">
+            Travail enregistré. La fenêtre du robot se ferme toute seule {{ ['essai', 'calibrage'].includes(robot.data.mode)
+              ? '10 min' : '1 min' }} après la fin ; fermez-la avant pour relancer tout de suite.</p>
+          <h3 style="margin-top:16px">Journal</h3>
+          <pre class="journal">{{ robot.data.journal.join('\n') || 'Aucune ligne pour l’instant.' }}</pre>
+          <template v-if="robot.data.captures.length">
+            <h3 style="margin-top:18px">Captures ({{ robot.data.captures.length }})</h3>
+            <div class="captures">
+              <a v-for="c in robot.data.captures" :key="c.nom" class="capture" :href="c.url" target="_blank" rel="noopener noreferrer">
+                <img :src="c.url" :alt="c.legende" loading="lazy">{{ c.legende }}</a>
+            </div>
           </template>
         </div>
 
-        <article v-for="e in spont.data.lot" :key="e.siret" class="card offer">
-          <div class="offer-head">
-            <h2 style="margin:0">{{ e.entreprise }}</h2>
-            <span class="tag">{{ e.metier }}</span>
+        <!-- Message -->
+        <div class="card">
+          <h2>Message</h2>
+          <p class="sub" style="margin:0 0 12px">Modèle : <code>{{ camp.data.message.chemin_a }}</code> (un seul champ :
+            <code>{entreprise}</code>). Version B facultative : <code>{{ camp.data.message.chemin_b }}</code>
+            ({{ camp.data.message.version_b ? 'présente : A et B en alternance' : 'absente' }}).</p>
+          <div v-for="p in camp.data.message.problemes" :key="p" class="alert error" style="margin-bottom:12px" role="alert">{{ p }}</div>
+          <div class="form-row two">
+            <div><label for="camp-exemple">Entreprise exemple</label>
+              <input id="camp-exemple" type="text" v-model="camp.exemple" @input="rafraichirApercu"></div>
           </div>
-          <div class="meta">{{ [e.ville, e.secteur].filter(Boolean).join(' · ') }}</div>
-          <template v-if="e.message">
-            <div v-for="p in e.message.problemes" :key="p" class="alert warn" style="margin-top:12px">{{ p }}</div>
-            <p v-if="e.message.retires.length" class="sub" style="margin:12px 0 0">Caractères retirés, refusés par
-              La Bonne Boîte : {{ e.message.retires.join(' ') }}</p>
-            <details v-if="e.message.texte" class="message-repli">
-              <summary>Voir le message ({{ e.message.texte.length }} caractères)</summary>
-              <pre class="letter message">{{ e.message.texte }}</pre>
-            </details>
+          <div v-for="(m, v) in (camp.apercu || camp.data.message).versions" :key="v" style="margin-top:14px">
+            <div class="sub">Version {{ v }} · nom utilisé : « {{ m.nom }} » · {{ m.longueur }} / 1500 caractères<template
+              v-if="m.retires.length"> · retirés : {{ m.retires.join(' ') }}</template></div>
+            <div v-for="p in m.problemes" :key="p" class="alert error" style="margin-top:8px">{{ p }}</div>
+            <pre class="letter message">{{ m.texte }}</pre>
+          </div>
+          <template v-if="camp.data.versions.length">
+            <h3 style="margin-top:18px">Envois et réponses par version</h3>
+            <table class="compact">
+              <thead><tr><th>Version</th><th>Envoyées</th><th>Réponses</th><th>Positives</th><th>Refus</th><th>Autres</th></tr></thead>
+              <tbody><tr v-for="s in camp.data.versions" :key="s.version">
+                <td data-label="Version">{{ s.version }}</td><td data-label="Envoyées">{{ s.envoyees }}</td>
+                <td data-label="Réponses">{{ s.reponses }}</td><td data-label="Positives">{{ s.positive }}</td>
+                <td data-label="Refus">{{ s.refus }}</td><td data-label="Autres">{{ s.autre }}</td></tr></tbody>
+            </table>
           </template>
-          <div class="row" style="margin-top:16px">
-            <button class="btn" :disabled="!e.message || !e.message.texte" @click="copyMessage(e)">
-              {{ spont.copied[e.siret] ? 'Message copié' : 'Copier le message' }}</button>
-            <a class="btn primary" :href="e.url_entreprise" target="_blank" rel="noopener noreferrer">Ouvrir l'entreprise</a>
-            <button class="btn" :disabled="!!e.envoyee_le || spont.marking[e.siret]" @click="markSent(e)">
-              {{ spont.marking[e.siret] ? 'Enregistrement…' : 'Marquer comme envoyée' }}</button>
-          </div>
-          <p v-if="e.envoyee_le" class="success" style="margin:14px 0 0">
-            Envoyée le {{ fmtDate(e.envoyee_le) }}{{ e.envoyee_par === 'robot' ? ' par le robot' : '' }}<template
-            v-if="e.relance_le"> · relance prévue le {{ fmtDate(e.relance_le) }}</template></p>
-          <p v-else-if="e.statut !== 'À envoyer'" class="meta" style="margin:14px 0 0">{{ e.statut }}</p>
-          <p v-if="e.robot_note" class="sub" style="margin:8px 0 0">Robot : {{ e.robot_note }}</p>
-          <div v-if="spont.markError[e.siret]" class="alert error" style="margin-top:14px">{{ spont.markError[e.siret] }}</div>
-          <div v-if="spont.copyError[e.siret]" class="alert error" style="margin-top:14px">{{ spont.copyError[e.siret] }}</div>
-        </article>
+        </div>
 
-        <div class="card" style="padding:8px 16px 16px">
-          <h2 style="margin:12px 0 4px">Historique</h2>
-          <table v-if="spont.data.historique.length" class="compact">
-            <thead><tr><th>Entreprise</th><th>Ville</th><th>Proposée le</th><th>Statut</th><th>Relance</th></tr></thead>
-            <tbody>
-              <tr v-for="h in spont.data.historique" :key="h.siret">
-                <td data-label="Entreprise">{{ h.entreprise }}<div class="tag">{{ h.metier }}</div></td>
-                <td data-label="Ville">{{ h.ville || '—' }}</td>
-                <td data-label="Proposée le">{{ fmtDate(h.lot_du) }}</td>
-                <td data-label="Statut">{{ h.statut }}<div v-if="h.envoyee_le" class="sub">le {{ fmtDate(h.envoyee_le) }}{{
-                  h.envoyee_par === 'robot' ? ' par le robot' : '' }}</div></td>
-                <td data-label="Relance">
-                  <span v-if="h.relance_conseillee" class="relance">Relance conseillée</span>
-                  <span v-else-if="h.relance_le">le {{ fmtDate(h.relance_le) }}</span>
-                  <span v-else class="sub">—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="sub" style="margin:8px 0">Aucune candidature spontanée pour l'instant.</p>
+        <!-- Réglages -->
+        <form class="card" novalidate @submit.prevent="saveCampagneReglages" @input="camp.formTouched = true"
+              @change="camp.formTouched = true">
+          <h2>Réglages</h2>
+          <div class="grid-2">
+            <div><label for="c-cv">CV à joindre <span class="hint">nom du document sur La Bonne Boîte</span></label>
+              <input id="c-cv" type="text" v-model="camp.form.nom_cv" placeholder="Nom exact du CV dans « Vos documents »">
+              <div class="sub" style="margin-top:6px">Nom exact, sinon nom contenu. Ambigu ou introuvable : la campagne s'arrête.</div></div>
+            <div><label>Phases</label>
+              <label class="check" style="margin-top:4px"><input type="checkbox" v-model="camp.form.phase_a"> Phase A : data, IA et informatique</label>
+              <label class="check" style="margin-top:4px"><input type="checkbox" v-model="camp.form.phase_b"> Phase B : métiers voisins
+                (désactivée par défaut)</label></div>
+          </div>
+          <div class="row" style="margin-top:18px">
+            <button class="btn primary" type="submit" :disabled="camp.saving">{{ camp.saving ? 'Enregistrement…' : 'Enregistrer' }}</button>
+            <span v-if="camp.saved" class="success">Réglages enregistrés.</span>
+          </div>
+          <div v-if="camp.reglagesError" class="alert error" style="margin-top:14px" role="alert">{{ camp.reglagesError }}</div>
+        </form>
+
+        <!-- Historique -->
+        <div class="card">
+          <div class="offer-head"><h2 style="margin:0">Historique</h2>
+            <a class="btn" :href="exportUrl" download>Exporter en CSV</a></div>
+          <div class="filtres">
+            <div><label for="h-statut">Statut</label><select id="h-statut" v-model="camp.hist.statut" @change="loadHistorique(1)">
+              <option value="tous">Tous</option>
+              <option v-for="(l, s) in statutsHistorique" :key="s" :value="s">{{ l }}</option></select></div>
+            <div><label for="h-phase">Phase</label><select id="h-phase" v-model="camp.hist.phase" @change="loadHistorique(1)">
+              <option value="">Toutes</option><option value="A">A</option><option value="B">B</option></select></div>
+            <div><label for="h-reponse">Réponse</label><select id="h-reponse" v-model="camp.hist.reponse" @change="loadHistorique(1)">
+              <option value="">Toutes</option><option value="aucune">Aucune</option>
+              <option v-for="(l, r) in camp.data.reponses" :key="r" :value="r">{{ l }}</option></select></div>
+            <div><label for="h-recherche">Recherche</label><input id="h-recherche" type="text" v-model="camp.hist.recherche"
+              placeholder="Entreprise, ville, SIRET" @input="chercherHistorique"></div>
+          </div>
+          <div v-if="camp.hist.error" class="alert error" style="margin-top:12px" role="alert">{{ camp.hist.error }}</div>
+          <div v-if="camp.hist.loading && !camp.hist.data" class="loading" role="status"><span class="spinner"></span>Chargement…</div>
+          <template v-else-if="camp.hist.data">
+            <table v-if="camp.hist.data.items.length" class="compact historique">
+              <thead><tr><th>Entreprise</th><th>Métier</th><th>Statut</th><th>Date</th><th>Version</th><th>Réponse reçue</th></tr></thead>
+              <tbody>
+                <tr v-for="h in camp.hist.data.items" :key="h.siret">
+                  <td data-label="Entreprise"><strong>{{ h.entreprise }}</strong><div class="sub">{{ h.ville }}<template
+                    v-if="h.departement"> ({{ h.departement }})</template> · {{ h.siret }}</div></td>
+                  <td data-label="Métier">{{ h.metier }}<div class="sub">phase {{ h.phase }}</div></td>
+                  <td data-label="Statut"><span :class="['statut', h.statut]">{{ h.statut_libelle }}</span>
+                    <div v-if="h.motif" class="sub">{{ h.motif_libelle || h.motif }}</div>
+                    <div v-if="h.statut === 'incertaine'" class="row" style="margin-top:6px">
+                      <button class="btn" :disabled="camp.rowSaving[h.siret]" @click="resoudre(h, 'envoyee')">Envoyée</button>
+                      <button class="btn" :disabled="camp.rowSaving[h.siret]" @click="resoudre(h, 'erreur')">Erreur</button></div>
+                    <div v-if="h.statut === 'brouillon' || h.statut === 'erreur'" class="row" style="margin-top:6px">
+                      <button class="btn" :disabled="camp.rowSaving[h.siret]" @click="aLaMain(h)">Envoyée à la main</button></div></td>
+                  <td data-label="Date">{{ fmtDateHeure(h.envoyee_le || h.tentee_le || h.maj_le) }}</td>
+                  <td data-label="Version">{{ h.version || '' }}</td>
+                  <td data-label="Réponse reçue">
+                    <select v-if="h.statut === 'envoyee'" :aria-label="'Réponse de ' + h.entreprise" :value="h.reponse || ''"
+                            :disabled="camp.rowSaving[h.siret]" @change="setReponse(h, $event.target.value)">
+                      <option value="">Aucune</option>
+                      <option v-for="(l, r) in camp.data.reponses" :key="r" :value="r">{{ l }}</option></select>
+                    <div v-if="camp.rowError[h.siret]" class="alert error" style="margin-top:6px">{{ camp.rowError[h.siret] }}</div></td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="sub" style="margin:12px 0 0">Aucune candidature pour ces filtres.</p>
+            <div class="row pagination">
+              <button class="btn" :disabled="camp.hist.data.page <= 1 || camp.hist.loading" @click="loadHistorique(camp.hist.data.page - 1)">Précédent</button>
+              <span class="sub">Page {{ camp.hist.data.page }} sur {{ camp.hist.data.pages }} · {{ camp.hist.data.total }} candidature(s)</span>
+              <button class="btn" :disabled="camp.hist.data.page >= camp.hist.data.pages || camp.hist.loading" @click="loadHistorique(camp.hist.data.page + 1)">Suivant</button>
+            </div>
+          </template>
         </div>
       </template>
     </section>
@@ -568,7 +810,7 @@
         <div class="item">
           <div><h3 style="margin:0">La Bonne Boîte</h3>
             <div class="sub">{{ settings.data.ft_mode_test ? 'Mode test : entreprises fictives.'
-              : "API La Bonne Boîte v2 (candidatures spontanées) : à ajouter à votre application sur francetravail.io." }}</div>
+              : "API La Bonne Boîte v2 (campagne) : à ajouter à votre application sur francetravail.io." }}</div>
             <div v-if="settings.acces" class="sub" :style="{ color: settings.acces.ok ? 'var(--ok)' : 'var(--danger)' }">
               {{ settings.acces.detail }}</div></div>
           <button class="btn" :disabled="settings.accesLoading" @click="checkAccess">
@@ -579,33 +821,6 @@
           <span :class="settings.data.gmail_configured ? 'state-ok' : 'sub'">{{ settings.data.gmail_configured ? 'Configuré' : 'Non configuré' }}</span>
         </div>
       </div>
-      <form v-if="settings.reglages" class="card" novalidate @submit.prevent="saveReglages">
-        <h2>Robot des candidatures spontanées</h2>
-        <label class="check" style="margin-top:0">
-          <input type="checkbox" v-model="settings.form.envoi_automatique"> Envoi automatique</label>
-        <p class="sub" style="margin:6px 0 0">Désactivé par défaut : le robot s'arrête toujours avant l'envoi, et vous
-          envoyez vous-même. L'essai sur une entreprise n'envoie jamais rien.</p>
-        <div v-if="settings.form.envoi_automatique" class="alert warn" style="margin-top:12px">
-          Activé : le robot enverra lui-même chaque candidature du lot après vérification du formulaire, sans attendre
-          votre relecture, au plus {{ settings.form.plafond_par_jour || '…' }} par jour.</div>
-        <div class="grid-2" style="margin-top:18px">
-          <div>
-            <label for="plafond">Plafond par jour <span class="hint">1 à {{ settings.reglages.plafond_max }}</span></label>
-            <input id="plafond" type="number" min="1" :max="settings.reglages.plafond_max" v-model.number="settings.form.plafond_par_jour">
-          </div>
-          <div>
-            <label for="nomcv">Nom du CV à joindre <span class="hint">facultatif</span></label>
-            <input id="nomcv" type="text" v-model="settings.form.nom_cv" placeholder="Utile si plusieurs documents sur La Bonne Boîte">
-            <div class="sub" style="margin-top:6px">Sans ce nom, ou s'il ne désigne pas un seul document, le robot vous
-              demande lequel joindre.</div>
-          </div>
-        </div>
-        <div class="row" style="margin-top:18px">
-          <button class="btn primary" type="submit" :disabled="settings.saving">{{ settings.saving ? 'Enregistrement…' : 'Enregistrer' }}</button>
-          <span v-if="settings.saved" class="success">Réglages enregistrés.</span>
-        </div>
-        <div v-if="settings.reglagesError" class="alert error" style="margin-top:14px" role="alert">{{ settings.reglagesError }}</div>
-      </form>
     </section>
   </main>
 </template>
@@ -620,7 +835,7 @@
   const VIEWS = [
     { id: 'candidature', label: 'Nouvelle candidature' },
     { id: 'offres', label: 'Offres' },
-    { id: 'spontanees', label: 'Spontanées' },
+    { id: 'campagne', label: 'Campagne' },
     { id: 'suivi', label: 'Suivi' },
     { id: 'parametres', label: 'Paramètres' },
   ];
@@ -654,21 +869,68 @@
       const offers = reactive({ keyword: '', city: '', contract: '', hide: true, loading: false, error: '',
                                 items: [], hidden: 0, searched: false });
       const track = reactive({ loading: false, error: '', items: [], saving: {}, rowError: {} });
-      const settings = reactive({ loading: false, error: '', data: null, reglages: null, saving: false, saved: false,
-                                  reglagesError: '', acces: null, accesLoading: false,
-                                  form: { envoi_automatique: false, plafond_par_jour: 10, nom_cv: '' } });
-      const spont = reactive({ loading: false, error: '', data: null, ville: '', building: false, buildError: '',
-                               empty: false, copied: {}, copyError: {}, marking: {}, markError: {} });
-      const robot = reactive({ data: null, error: '', starting: false, deciding: false, stopping: false });
-      let robotTimer = null, robotSig = '';
-      const sentCount = computed(() => spont.data ? spont.data.lot.filter(e => e.envoyee_le).length : 0);
-      const hasToSend = computed(() => !!spont.data && spont.data.lot.some(e => e.statut === 'À envoyer' && !e.envoyee_le));
+      const settings = reactive({ loading: false, error: '', data: null, acces: null, accesLoading: false });
+      const camp = reactive({ loading: false, error: '', data: null, busy: false, acces: null, accesLoading: false,
+                              verif: null, verifLoading: false, invLoading: false, invError: '', recherche: '', choix: [],
+                              choixSiret: '', manuel: { siret: '', entreprise: '', rome: 'M1811', departement: '' }, manuelError: '',
+                              regle: { bouton: '', url_motif: '', texte: '' }, regleTouched: false, regleError: '',
+                              cinqError: '', form: {}, nombre: '', nombreTouche: false, formTouched: false, saving: false,
+                              saved: false,
+                              reglagesError: '', exemple: 'UBER EATS FRANCE SAS', apercu: null, rowSaving: {}, rowError: {},
+                              hist: { statut: 'tous', phase: '', reponse: '', recherche: '', data: null, loading: false, error: '' } });
+      const robot = reactive({ data: null, error: '', starting: false, stopping: false, busy: false });
+      let robotTimer = null, robotSig = '', invTimer = null;
       const robotBusy = computed(() => robot.starting || !!(robot.data && robot.data.actif));
+      const etapesPassage = ["API et plan", 'Essai sans envoi', 'Calibrage', 'Cinq envois devant vous', 'Campagne'];
+      const modesRobot = { essai: 'Essai', calibrage: 'Calibrage', cinq: 'Cinq envois', campagne: 'Campagne' };
+      const tousMetiers = computed(() => camp.data ? ['A', 'B'].flatMap(p => camp.data.metiers[p].flatMap(g => g.metiers)) : []);
+      const statutsHistorique = computed(() => camp.data ? Object.fromEntries(Object.entries(camp.data.statuts)
+        .filter(([s]) => s !== 'a_faire')) : {});
+      const nombreValide = computed(() => Number.isInteger(camp.nombre) && camp.nombre >= 1
+        && camp.nombre <= (camp.data ? camp.data.objectif_max : 1000));
+      const inventaireEnCours = computed(() => !!camp.data && camp.data.plan.inventaire.etat === 'en_cours');
+      const inventaireTexte = computed(() => {
+        const inv = camp.data ? camp.data.plan.inventaire : null;
+        if (!inv || inv.etat === 'jamais') return 'pas encore lancé.';
+        const nb = (n) => Number(n || 0).toLocaleString('fr-FR');
+        const faites = inv.faites || 0, total = faites + (inv.restantes || 0);
+        const ajoutees = inv.ajoutees != null ? `, ${nb(inv.ajoutees)} entreprise(s) ajoutée(s)` : '';
+        if (inv.etat === 'en_cours') return `en cours : ${inv.zone || 'Île-de-France'} (${nb(faites)} recherche(s) sur `
+          + `${nb(total)} terminée(s)${ajoutees})…`;
+        if (inv.etat === 'erreur') return 'interrompu (voir le message en haut de l\'écran).';
+        const reste = inv.restantes ? ` ${nb(inv.restantes)} recherche(s) à faire (nouvelles villes ou phase B) : `
+          + '« Lancer l\'inventaire » les fait.' : ' À jour : « Nouvel inventaire » refait toutes les recherches.';
+        return `terminé le ${fmtDateHeure(inv.fin)} (Île-de-France, puis les villes de chaque département ; ${nb(faites)} `
+          + `recherche(s)${ajoutees}).${reste}`;
+      });
+      const inventaireAJour = computed(() => !!camp.data && camp.data.plan.inventaire.etat === 'termine'
+        && !camp.data.plan.inventaire.restantes);
+      const etatCampagne = computed(() => {
+        const r = robot.data, d = camp.data;
+        if (r && r.actif) {
+          if (r.attente === 'connexion') return { libelle: 'Attente de connexion', classe: 'attente' };
+          if (r.attente === 'reconnexion') return { libelle: 'Attente de reconnexion', classe: 'pause' };
+          if (r.attente === 'clic') return { libelle: 'Attente de votre clic', classe: 'attente' };
+          if (r.statut === 'en_pause') return { libelle: 'En pause', classe: 'pause' };
+          if (r.pause_demandee) return { libelle: 'Pause demandée…', classe: 'pause' };
+          if (r.statut === 'en_cours') return { libelle: (modesRobot[r.mode] || 'Robot') + ' en cours', classe: 'ok' };
+          return { libelle: 'Fenêtre ouverte', classe: '' };
+        }
+        if (d && d.alerte) return { libelle: 'Arrêtée sur alerte', classe: 'alerte' };
+        if (r && r.statut === 'arrete') return { libelle: 'Arrêtée', classe: 'pause' };
+        if (r && r.statut === 'erreur') return { libelle: 'Arrêtée sur erreur', classe: 'alerte' };
+        return { libelle: d && d.etape < 5 ? 'Premier passage' : 'Prête', classe: '' };
+      });
 
       const fmtDate = (v) => {
         if (!v) return '';
         const d = new Date(v);
         return isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      };
+      const fmtDateHeure = (v) => {
+        if (!v) return '';
+        const d = new Date(v);
+        return isNaN(d) ? '' : d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       };
       const contractLabel = (c) => ({ these_cifre: 'Thèse CIFRE', inconnu: '' }[c] ?? c ?? '');
       const key = (a) => a.source + '/' + a.external_id;
@@ -760,108 +1022,224 @@
       }
 
       async function loadSettings() {
-        settings.loading = true; settings.error = ''; settings.saved = false; settings.acces = null;
+        settings.loading = true; settings.error = ''; settings.acces = null;
         try {
-          const [status, reglages] = await Promise.all([api('/api/status'), api('/api/spontanees/reglages')]);
-          settings.data = status; setReglages(reglages);
+          settings.data = await api('/api/status');
         } catch (e) { settings.error = e.message; } finally { settings.loading = false; }
-      }
-
-      function setReglages(r) {
-        settings.reglages = r;
-        Object.assign(settings.form, { envoi_automatique: r.envoi_automatique, plafond_par_jour: r.plafond_par_jour, nom_cv: r.nom_cv });
-      }
-
-      async function saveReglages() {
-        settings.saving = true; settings.saved = false; settings.reglagesError = '';
-        try {
-          setReglages(await api('/api/spontanees/reglages', { method: 'PUT', body: JSON.stringify(settings.form) }));
-          settings.saved = true;
-        } catch (e) { settings.reglagesError = e.message; } finally { settings.saving = false; }
       }
 
       async function checkAccess() {
         settings.accesLoading = true; settings.acces = null;
-        try { settings.acces = await api('/api/spontanees/acces'); }
+        try { settings.acces = await api('/api/campagne/acces'); }
         catch (e) { settings.acces = { ok: false, detail: e.message }; } finally { settings.accesLoading = false; }
       }
 
-      // Candidatures spontanées : lot du jour, robot (état relu toutes les 1,5 s tant qu'il tourne), historique.
-      const signature = (r) => JSON.stringify(r ? [r.id, r.statut, r.compteurs, r.actif] : null);
+      // Campagne : état relu toutes les 1,5 s tant que le robot tourne (2 s pendant l'inventaire).
+      const signature = (r) => JSON.stringify(r ? [r.id, r.statut, r.compteurs, r.actif, r.attente] : null);
 
       function setRobot(data) {
         robot.data = data; robotSig = signature(data);
         clearTimeout(robotTimer); robotTimer = null;
-        if (view.value === 'spontanees' && data && data.actif) robotTimer = setTimeout(pollRobot, 1500);
+        if (view.value === 'campagne' && data && data.actif) robotTimer = setTimeout(pollRobot, 1500);
       }
 
       async function pollRobot() {
         let data;
-        try { data = await api('/api/spontanees/robot'); robot.error = ''; }
+        try { data = await api('/api/campagne/robot'); robot.error = ''; }
         catch (e) { robot.error = e.message; setRobot(robot.data); return; }
         const changed = signature(data) !== robotSig;
         setRobot(data);
-        if (changed) {  // une entreprise traitée par le robot : lot et historique à jour
-          try { spont.data = await api('/api/spontanees'); } catch (e) { /* le passage suivant réessaie */ }
+        if (changed) await refreshCampagne();
+      }
+
+      function setCampagne(data) {
+        camp.data = data;
+        if (!camp.formTouched) Object.assign(camp.form, { nom_cv: data.reglages.nom_cv, phase_a: data.reglages.phase_a,
+                                                           phase_b: data.reglages.phase_b });
+        if (!camp.nombreTouche) camp.nombre = data.reglages.objectif;
+        if (data.passage.regle && !camp.regleTouched) Object.assign(camp.regle, data.passage.regle);
+        setRobot(data.robot);
+        clearTimeout(invTimer); invTimer = null;
+        if (view.value === 'campagne' && data.plan.inventaire.etat === 'en_cours') invTimer = setTimeout(refreshCampagne, 2000);
+      }
+
+      async function refreshCampagne() {
+        try { setCampagne(await api('/api/campagne')); camp.error = ''; } catch (e) { camp.error = e.message; }
+        if (camp.data && (camp.data.etape === 2 || camp.data.etape === 3)) await chercherEntreprises();
+        await loadHistorique(camp.hist.data ? camp.hist.data.page : 1);
+      }
+
+      async function loadCampagne() {
+        camp.loading = true; camp.error = ''; camp.formTouched = false; camp.regleTouched = false;
+        try { setCampagne(await api('/api/campagne')); } catch (e) { camp.error = e.message; } finally { camp.loading = false; }
+        if (camp.data) {
+          // Accès à l'API vérifié à l'ouverture de l'écran (jeton seulement, aucune recherche).
+          await Promise.all([loadHistorique(1), chercherEntreprises(), camp.acces ? null : checkAccesCampagne()]);
+          if (!camp.choixSiret && camp.data.passage.essai) camp.choixSiret = camp.data.passage.essai.siret;
         }
       }
 
-      async function loadSpontanees() {
-        spont.loading = true; spont.error = '';
-        try {
-          const [data, state] = await Promise.all([api('/api/spontanees'), api('/api/spontanees/robot')]);
-          spont.data = data; setRobot(state);
-        } catch (e) { spont.error = e.message; } finally { spont.loading = false; }
+      async function checkAccesCampagne() {
+        camp.accesLoading = true; camp.acces = null;
+        try { camp.acces = await api('/api/campagne/acces'); }
+        catch (e) { camp.acces = { ok: false, detail: e.message }; } finally { camp.accesLoading = false; }
       }
 
-      async function buildBatch() {
-        spont.building = true; spont.buildError = ''; spont.empty = false;
-        try {
-          const data = await api('/api/spontanees/lot', { method: 'POST', body: JSON.stringify({ ville: spont.ville || null }) });
-          spont.data = data; spont.empty = !data.lot.length;
-        } catch (e) { spont.buildError = e.message; } finally { spont.building = false; }
+      async function verifierMetiers() {
+        camp.verifLoading = true; camp.error = '';
+        try { camp.verif = await api('/api/campagne/metiers/verifier', { method: 'POST' }); }
+        catch (e) { camp.error = e.message; } finally { camp.verifLoading = false; }
       }
 
-      async function copyMessage(e) {
-        spont.copyError[e.siret] = '';
-        try {
-          await navigator.clipboard.writeText(e.message.texte);
-          spont.copied[e.siret] = true;
-          setTimeout(() => { spont.copied[e.siret] = false; }, 2500);
-        } catch (err) { spont.copyError[e.siret] = 'Copie impossible : sélectionnez le message et copiez-le manuellement.'; }
+      async function validerMetiers() {
+        camp.busy = true;
+        try { await api('/api/campagne/metiers/valider', { method: 'POST' }); await refreshCampagne(); }
+        catch (e) { camp.error = e.message; } finally { camp.busy = false; }
       }
 
-      async function markSent(e) {
-        spont.marking[e.siret] = true; spont.markError[e.siret] = '';
+      async function lancerInventaire(nouveau = false) {
+        camp.invLoading = true; camp.invError = '';
         try {
-          await api(`/api/spontanees/${encodeURIComponent(e.siret)}/envoyee`, { method: 'POST' });
-          spont.data = await api('/api/spontanees');
-        } catch (err) { spont.markError[e.siret] = err.message; } finally { spont.marking[e.siret] = false; }
+          await api('/api/campagne/inventaire', { method: 'POST', body: JSON.stringify({ nouveau }) });
+          await refreshCampagne();
+        } catch (e) { camp.invError = e.message; } finally { camp.invLoading = false; }
+      }
+      function nouvelInventaire() {
+        const n = camp.data.plan.inventaire.faites || 0, minutes = Math.max(1, Math.round(n * 0.55 / 60));
+        if (confirm(`Refaire toutes les recherches (${n.toLocaleString('fr-FR')}, environ ${minutes} min) ? Les entreprises déjà en base `
+          + 'ne sont jamais reprises : seules les nouvelles sont ajoutées.')) lancerInventaire(true);
       }
 
-      async function startRobot(mode) {
+      let choixTimer = null;
+      async function chercherEntreprises() {
+        clearTimeout(choixTimer);
+        return new Promise((resolve) => {
+          choixTimer = setTimeout(async () => {
+            try {
+              const r = await api('/api/campagne/entreprises?limite=12&recherche=' + encodeURIComponent(camp.recherche));
+              camp.choix = r.items;
+            } catch (e) { camp.error = e.message; }
+            resolve();
+          }, 250);
+        });
+      }
+
+      async function ajouterManuelle() {
+        camp.busy = true; camp.manuelError = '';
+        try {
+          const e = await api('/api/campagne/entreprises', { method: 'POST', body: JSON.stringify(camp.manuel) });
+          camp.recherche = e.siret; await chercherEntreprises(); camp.choixSiret = e.siret;
+          Object.assign(camp.manuel, { siret: '', entreprise: '', departement: '' });
+        } catch (e) { camp.manuelError = e.message; } finally { camp.busy = false; }
+      }
+
+      async function startRobot(mode, siret, nombre) {
         robot.starting = true; robot.error = '';
-        try { setRobot(await api('/api/spontanees/robot', { method: 'POST', body: JSON.stringify({ mode }) })); }
-        catch (e) { robot.error = e.message; } finally { robot.starting = false; }
+        try {
+          setRobot(await api('/api/campagne/robot', { method: 'POST',
+            body: JSON.stringify({ mode, siret: siret || null, nombre: nombre === undefined ? null : nombre }) }));
+          camp.nombreTouche = false;
+          await refreshCampagne();
+        } catch (e) { robot.error = e.message; } finally { robot.starting = false; }
       }
 
-      async function decide(action, document) {
-        robot.deciding = true; robot.error = '';
-        try { setRobot(await api('/api/spontanees/robot/decision', { method: 'POST', body: JSON.stringify({ action, document }) })); }
-        catch (e) { robot.error = e.message; } finally { robot.deciding = false; }
+      async function pauseRobot(active) {
+        robot.busy = true; robot.error = '';
+        try { setRobot(await api('/api/campagne/robot/' + (active ? 'pause' : 'reprendre'), { method: 'POST' })); }
+        catch (e) { robot.error = e.message; } finally { robot.busy = false; }
+      }
+
+      async function passerCalibrage() {
+        robot.busy = true; robot.error = '';
+        try { setRobot(await api('/api/campagne/robot/passer', { method: 'POST' })); }
+        catch (e) { robot.error = e.message; } finally { robot.busy = false; }
       }
 
       async function stopRobot() {
         robot.stopping = true; robot.error = '';
-        try { setRobot(await api('/api/spontanees/robot/arret', { method: 'POST' })); }
+        try { setRobot(await api('/api/campagne/robot/arret', { method: 'POST' })); }
         catch (e) { robot.error = e.message; } finally { robot.stopping = false; }
+      }
+
+      async function validerRegle() {
+        camp.busy = true; camp.regleError = '';
+        try {
+          await api('/api/campagne/regle/valider', { method: 'POST', body: JSON.stringify({ bouton: camp.regle.bouton,
+            url_motif: camp.regle.url_motif, texte: camp.regle.texte }) });
+          camp.regleTouched = false; await refreshCampagne();
+        } catch (e) { camp.regleError = e.message; } finally { camp.busy = false; }
+      }
+
+      async function validerCinq() {
+        camp.busy = true; camp.cinqError = '';
+        try { await api('/api/campagne/cinq/valider', { method: 'POST' }); await refreshCampagne(); }
+        catch (e) { camp.cinqError = e.message; } finally { camp.busy = false; }
+      }
+
+      async function saveCampagneReglages() {
+        camp.saving = true; camp.saved = false; camp.reglagesError = '';
+        try {
+          await api('/api/campagne/reglages', { method: 'PUT', body: JSON.stringify(camp.form) });
+          camp.formTouched = false; camp.saved = true; await refreshCampagne();
+        } catch (e) { camp.reglagesError = e.message; } finally { camp.saving = false; }
+      }
+
+      let apercuTimer = null;
+      function rafraichirApercu() {
+        clearTimeout(apercuTimer);
+        apercuTimer = setTimeout(async () => {
+          try { camp.apercu = await api('/api/campagne/apercu?entreprise=' + encodeURIComponent(camp.exemple)); }
+          catch (e) { camp.error = e.message; }
+        }, 250);
+      }
+
+      const filtresHistorique = () => new URLSearchParams({ statut: camp.hist.statut, phase: camp.hist.phase,
+                                                             reponse: camp.hist.reponse, recherche: camp.hist.recherche });
+      const exportUrl = computed(() => '/api/campagne/export.csv?' + filtresHistorique().toString());
+
+      async function loadHistorique(page) {
+        camp.hist.loading = true; camp.hist.error = '';
+        try {
+          const params = filtresHistorique(); params.set('page', page || 1);
+          camp.hist.data = await api('/api/campagne/historique?' + params.toString());
+        } catch (e) { camp.hist.error = e.message; } finally { camp.hist.loading = false; }
+      }
+
+      let histTimer = null;
+      function chercherHistorique() { clearTimeout(histTimer); histTimer = setTimeout(() => loadHistorique(1), 300); }
+
+      async function setReponse(h, valeur) {
+        camp.rowSaving[h.siret] = true; camp.rowError[h.siret] = '';
+        try {
+          const item = await api(`/api/campagne/${encodeURIComponent(h.siret)}/reponse`, { method: 'POST',
+            body: JSON.stringify({ reponse: valeur || null }) });
+          Object.assign(h, item);
+          camp.data.versions = (await api('/api/campagne')).versions;
+        } catch (e) { camp.rowError[h.siret] = e.message; } finally { camp.rowSaving[h.siret] = false; }
+      }
+
+      async function aLaMain(h) {
+        camp.rowSaving[h.siret] = true; camp.rowError[h.siret] = '';
+        try {
+          Object.assign(h, await api(`/api/campagne/${encodeURIComponent(h.siret)}/main`, { method: 'POST' }));
+          await refreshCampagne();
+        } catch (e) { camp.rowError[h.siret] = e.message; } finally { camp.rowSaving[h.siret] = false; }
+      }
+
+      async function resoudre(h, statut) {
+        camp.rowSaving[h.siret] = true; camp.rowError[h.siret] = '';
+        try {
+          Object.assign(h, await api(`/api/campagne/${encodeURIComponent(h.siret)}/statut`, { method: 'POST',
+            body: JSON.stringify({ statut }) }));
+          await refreshCampagne();
+        } catch (e) { camp.rowError[h.siret] = e.message; } finally { camp.rowSaving[h.siret] = false; }
       }
 
       function route() {
         const id = (location.hash || '').replace('#/', '');
         view.value = VIEWS.some(v => v.id === id) ? id : 'candidature';
-        clearTimeout(robotTimer); robotTimer = null;
-        if (view.value === 'spontanees') loadSpontanees();
+        clearTimeout(robotTimer); robotTimer = null; clearTimeout(invTimer); invTimer = null;
+        if (view.value === 'campagne') loadCampagne();
         if (view.value === 'suivi') loadTracking();
         if (view.value === 'parametres') loadSettings();
         window.scrollTo(0, 0);
@@ -876,10 +1254,14 @@
         } catch (e) { offers.error = e.message; }
       });
 
-      return { views: VIEWS, view, defaults, statuses, prep, offers, track, settings, spont, robot, sentCount, hasToSend,
-               robotBusy, fmtDate, contractLabel, key, viaLabel, resetPrep, prepare, regenerateLetter, markApplied,
-               copyLetter, prepareFromOffer, search, changeStatus, saveReglages, checkAccess, buildBatch, copyMessage,
-               markSent, startRobot, decide, stopRobot };
+      return { views: VIEWS, view, defaults, statuses, prep, offers, track, settings, camp, robot, robotBusy, etapesPassage,
+               modesRobot, tousMetiers, statutsHistorique, nombreValide, inventaireEnCours, inventaireTexte, inventaireAJour,
+               nouvelInventaire, etatCampagne, exportUrl,
+               fmtDate, fmtDateHeure, contractLabel, key, viaLabel, resetPrep, prepare, regenerateLetter, markApplied,
+               copyLetter, prepareFromOffer, search, changeStatus, checkAccess, checkAccesCampagne, verifierMetiers,
+               validerMetiers, lancerInventaire, chercherEntreprises, ajouterManuelle, startRobot, pauseRobot,
+               passerCalibrage, stopRobot, validerRegle, validerCinq, saveCampagneReglages, rafraichirApercu,
+               loadHistorique, chercherHistorique, setReponse, resoudre, aLaMain };
     },
   }).mount('#app');
 })();
